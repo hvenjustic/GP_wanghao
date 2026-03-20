@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING_REVIEW
+  MANUAL_REVIEW
+  PENDING_WAREHOUSE
+  PENDING_SHIPMENT
+  SHIPPED
+  SIGNED
+  COMPLETED
+  CANCELED
+  AFTER_SALE
+}
+
+enum RecordStatus {
+  DRAFT
+  PUBLISHED
+  DISABLED
+}
+
+enum RuleStatus {
+  DRAFT
+  PUBLISHED
+  DISABLED
+}
+
+model User {
+  id         String     @id @default(cuid())
+  email      String     @unique
+  name       String
+  status     String     @default("ACTIVE")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  roles      UserRole[]
+  auditLogs  AuditLog[]
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  name        String
+  status      String           @default("ACTIVE")
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id        String           @id @default(cuid())
+  code      String           @unique
+  name      String
+  scope     String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  roles     RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Customer {
+  id         String   @id @default(cuid())
+  name       String
+  phone      String?
+  level      String?
+  tags       Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  orders     Order[]
+}
+
+model Warehouse {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  region     String?
+  priority   Int      @default(0)
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  orders     Order[]
+}
+
+model Order {
+  id             String              @id @default(cuid())
+  orderNo        String              @unique
+  sourceNo       String?
+  sourceChannel  String?
+  status         OrderStatus         @default(PENDING_REVIEW)
+  isLocked       Boolean             @default(false)
+  isAbnormal     Boolean             @default(false)
+  reviewMode     String?
+  amount         Decimal             @db.Decimal(10, 2)
+  extension      Json?
+  customerId     String?
+  warehouseId    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  customer       Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  warehouse      Warehouse?          @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  items          OrderItem[]
+  shipments      Shipment[]
+  operationLogs  OrderOperationLog[]
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  skuId      String
+  skuName    String
+  quantity   Int
+  price      Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Shipment {
+  id          String   @id @default(cuid())
+  orderId      String
+  companyCode  String
+  trackingNo   String
+  shippedAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model EntityMeta {
+  id         String      @id @default(cuid())
+  entityCode String      @unique
+  name       String
+  type       String
+  status     RecordStatus @default(DRAFT)
+  schema     Json?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  fields     FieldMeta[]
+  pages      PageMeta[]
+}
+
+model FieldMeta {
+  id         String     @id @default(cuid())
+  entityId   String
+  fieldCode  String
+  name       String
+  type       String
+  required   Boolean    @default(false)
+  schema     Json?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  entity     EntityMeta @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, fieldCode])
+}
+
+model PageMeta {
+  id         String       @id @default(cuid())
+  entityId   String
+  pageCode   String
+  pageType   String
+  version    Int          @default(1)
+  status     RecordStatus @default(DRAFT)
+  schema     Json
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  entity     EntityMeta   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, pageCode, version])
+}
+
+model RuleDefinition {
+  id         String        @id @default(cuid())
+  ruleCode   String        @unique
+  name       String
+  type       String
+  scene      String
+  status     RuleStatus    @default(DRAFT)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  versions   RuleVersion[]
+}
+
+model RuleVersion {
+  id           String         @id @default(cuid())
+  ruleId       String
+  version      Int
+  graph        Json
+  publishInfo  Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  rule         RuleDefinition @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  execLogs     RuleExecLog[]
+
+  @@unique([ruleId, version])
+}
+
+model RuleExecLog {
+  id             String      @id @default(cuid())
+  ruleVersionId  String
+  orderId        String?
+  scene          String
+  status         String
+  durationMs     Int?
+  input          Json?
+  result         Json?
+  createdAt      DateTime    @default(now())
+  ruleVersion    RuleVersion @relation(fields: [ruleVersionId], references: [id], onDelete: Cascade)
+}
+
+model OrderOperationLog {
+  id         String   @id @default(cuid())
+  orderId     String
+  operatorId  String?
+  action      String
+  reason      String?
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  operatorId String?
+  action     String
+  targetType String
+  targetId   String?
+  detail     Json?
+  createdAt  DateTime @default(now())
+  operator   User?    @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+}

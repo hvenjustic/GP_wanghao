@@ -1,44 +1,73 @@
 # 面向中小电商的低代码订单管理系统
 
-本目录用于承载项目开工阶段的核心文档，按“先统一范围，再统一技术路线”的方式拆分为入口说明、需求文档、技术路线文档三部分。
+当前仓库已经完成第一步工程初始化，技术基线为 Next.js App Router + TypeScript + Prisma + Supabase + Ant Design + React Flow。
 
-## 文档结构
+## 当前已完成
 
-- [需求文档](docs/requirements.md)：聚焦系统做什么、做给谁用、需要哪些模块、数据与验收标准是什么。
-- [技术路线文档](docs/tech-roadmap.md)：聚焦用什么技术、为什么这样选、怎么分层、怎么部署、如何按阶段落地。
+- 初始化 `Next.js` 单仓项目基础配置。
+- 建立 `src/app`、`features`、`components`、`lib`、`server`、`prisma` 等核心目录。
+- 提供项目总览页、订单后台页、低代码配置页、规则编排页四个基础入口。
+- 提供 `Prisma schema`、健康检查接口、Supabase/Prisma 基础封装和 Zod schema 示例。
+- 保留并沿用现有需求文档与技术路线文档。
 
-## 项目目标
+## 目录结构
 
-建设一个面向中小电商的低代码订单管理系统原型，优先完成以下三个核心能力：
+```text
+docs/                    # 需求与技术文档
+prisma/                  # Prisma schema
+src/
+  app/                   # Next.js App Router 页面与 API
+  components/            # 通用布局与基础 UI 组件
+  features/              # 业务模块目录
+  lib/                   # 配置、数据库、Schema 和第三方客户端
+  server/                # 服务层
+```
 
-1. 订单管理后台
-2. 低代码配置能力
-3. 可视化规则编排能力
+## 本地启动
 
-系统采用“快速开发、快速上线”的策略，优先实现可演示、可试用、可部署的 MVP，再逐步增强第三方集成、复杂规则执行与多租户能力。
+1. 复制环境变量模板：
 
-## 推荐主方案
+```bash
+cp .env.example .env.local
+```
 
-- 全栈框架：Next.js（App Router）
-- UI：Ant Design + ProComponents
-- 数据库：Supabase PostgreSQL
-- ORM：Prisma
-- 规则画布：React Flow
-- 校验：Zod
-- 部署：Vercel + Supabase
+2. 安装依赖：
 
-## 建议阅读顺序
+```bash
+pnpm install
+```
 
-1. 先看 [需求文档](docs/requirements.md)，确认系统边界、模块优先级和 MVP 范围。
-2. 再看 [技术路线文档](docs/tech-roadmap.md)，确定技术选型、目录结构、部署方式和迭代计划。
-3. 最后根据技术路线初始化代码仓库，并按 P0/P1/P2 优先级推进开发。
+3. 启动开发环境：
 
-## 当前开工建议
+```bash
+pnpm dev
+```
 
-建议先完成以下事项：
+4. 打开健康检查接口：
 
-1. 初始化 Next.js + TypeScript + pnpm 项目
-2. 接入 Supabase 与 Prisma
-3. 建立用户权限、订单、元数据、规则定义四类核心表
-4. 完成订单列表/详情、字段配置、规则画布三个主模块骨架
-5. 部署测试环境并建立日志链路
+```text
+http://localhost:3000/api/health
+```
+
+## 常用命令
+
+```bash
+pnpm dev
+pnpm build
+pnpm lint
+pnpm typecheck
+pnpm db:generate
+pnpm db:push
+```
+
+## 文档入口
+
+- [需求文档](docs/requirements.md)
+- [技术路线文档](docs/tech-roadmap.md)
+
+## 下一步建议
+
+- 把 `Prisma schema` 拆到首批迁移并接上真实数据库。
+- 在 `src/server/services` 中补齐订单、配置、规则三类服务。
+- 在 `src/app/orders`、`src/app/meta`、`src/app/rules` 下继续实现真实列表、详情和配置页面。
+- 接入 Supabase Auth 与 Row Level Security，补充登录和权限模型。
