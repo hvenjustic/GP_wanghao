@@ -622,6 +622,64 @@ a {
   border: 1px solid rgba(23, 104, 172, 0.12);
 }
 
+.designer-shell {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.designer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.designer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
+  gap: 18px;
+}
+
+.designer-stage {
+  min-height: 560px;
+  border-radius: 22px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(23, 104, 172, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 247, 251, 0.98));
+  border: 1px solid rgba(23, 104, 172, 0.12);
+}
+
+.designer-stage .react-flow__pane {
+  cursor: grab;
+}
+
+.designer-stage .react-flow__node.selected {
+  box-shadow: 0 0 0 3px rgba(23, 104, 172, 0.18);
+}
+
+.designer-stage .react-flow__controls,
+.designer-stage .react-flow__minimap {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 104, 172, 0.12);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.designer-stage .react-flow__attribution {
+  display: none;
+}
+
+.designer-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(23, 104, 172, 0.1);
+}
+
 .checkbox-card {
   display: flex;
   align-items: center;
@@ -675,6 +733,13 @@ a {
 
 .button-primary:hover {
   filter: brightness(1.03);
+}
+
+.button-primary:disabled,
+.button-secondary:disabled,
+.button-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .button-secondary {
@@ -876,6 +941,7 @@ a {
   .operation-grid,
   .filter-grid,
   .preview-grid,
+  .designer-layout,
   .meta-form-grid,
   .batch-panel-main,
   .auth-grid,

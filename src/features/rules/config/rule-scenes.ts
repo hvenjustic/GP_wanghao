@@ -21,6 +21,13 @@ export const ruleScenes = [
   }
 ] as const;
 
+export const ruleTypeOptions = [
+  "ORDER_REVIEW",
+  "WAREHOUSE_ASSIGN",
+  "SHIPMENT_CHECK",
+  "MANUAL_RETRY"
+] as const;
+
 export const ruleNodeTypes = [
   "开始节点",
   "条件节点",
@@ -28,4 +35,37 @@ export const ruleNodeTypes = [
   "动作节点",
   "结果节点",
   "计算节点"
+] as const;
+
+export const ruleNodeTemplates = [
+  {
+    kind: "start",
+    label: "开始节点",
+    detail: "定义规则触发场景和输入上下文。"
+  },
+  {
+    kind: "condition",
+    label: "条件节点",
+    detail: "按订单字段、标签、金额或地址进行条件判断。"
+  },
+  {
+    kind: "branch",
+    label: "分支节点",
+    detail: "把条件结果拆到不同路径。"
+  },
+  {
+    kind: "action",
+    label: "动作节点",
+    detail: "执行锁单、打标、改状态、分仓等动作。"
+  },
+  {
+    kind: "result",
+    label: "结果节点",
+    detail: "输出通过、转人工、拦截等最终结果。"
+  },
+  {
+    kind: "compute",
+    label: "计算节点",
+    detail: "做权重、优先级和中间变量计算。"
+  }
 ] as const;

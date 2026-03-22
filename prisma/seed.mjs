@@ -121,6 +121,7 @@ const entityMetas = [
     name: "订单扩展模型",
     type: "ORDER_EXTENSION",
     status: "PUBLISHED",
+    version: 2,
     schema: {
       owner: "订单中台",
       source: "prisma",
@@ -133,6 +134,7 @@ const entityMetas = [
     name: "客户画像模型",
     type: "CUSTOMER_EXTENSION",
     status: "DRAFT",
+    version: 1,
     schema: {
       owner: "运营团队",
       editable: true,
@@ -148,6 +150,8 @@ const fieldMetas = [
     fieldCode: "delivery_priority",
     name: "履约优先级",
     type: "select",
+    status: "PUBLISHED",
+    version: 2,
     required: false,
     schema: {
       options: ["normal", "urgent", "vip"],
@@ -161,6 +165,8 @@ const fieldMetas = [
     fieldCode: "review_note",
     name: "审核备注",
     type: "text",
+    status: "DRAFT",
+    version: 1,
     required: false,
     schema: {
       maxLength: 200,
@@ -174,11 +180,196 @@ const fieldMetas = [
     fieldCode: "customer_level_tag",
     name: "客户等级标签",
     type: "select",
+    status: "DRAFT",
+    version: 1,
     required: false,
     schema: {
       options: ["new", "returning", "vip"],
       searchVisible: true
     }
+  }
+];
+
+const metaConfigSnapshots = [
+  {
+    id: "meta-snapshot-entity-order-v1",
+    targetType: "ENTITY_META",
+    targetId: "entity-meta-order-extension",
+    targetCode: "ORDER_EXTENSION",
+    entityId: "entity-meta-order-extension",
+    fieldId: null,
+    version: 1,
+    status: "DRAFT",
+    action: "META_ENTITY_UPDATED",
+    note: "初始草稿版本",
+    snapshot: {
+      entityCode: "ORDER_EXTENSION",
+      name: "订单扩展模型",
+      type: "ORDER_EXTENSION",
+      status: "DRAFT",
+      schema: {
+        owner: "订单中台",
+        source: "prisma"
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:02:00.000Z"
+  },
+  {
+    id: "meta-snapshot-entity-order-v2",
+    targetType: "ENTITY_META",
+    targetId: "entity-meta-order-extension",
+    targetCode: "ORDER_EXTENSION",
+    entityId: "entity-meta-order-extension",
+    fieldId: null,
+    version: 2,
+    status: "PUBLISHED",
+    action: "META_ENTITY_PUBLISHED",
+    note: "订单扩展实体正式发布",
+    snapshot: {
+      entityCode: "ORDER_EXTENSION",
+      name: "订单扩展模型",
+      type: "ORDER_EXTENSION",
+      status: "PUBLISHED",
+      schema: {
+        owner: "订单中台",
+        source: "prisma",
+        editable: true
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:22:00.000Z"
+  },
+  {
+    id: "meta-snapshot-entity-customer-v1",
+    targetType: "ENTITY_META",
+    targetId: "entity-meta-customer-profile",
+    targetCode: "CUSTOMER_PROFILE",
+    entityId: "entity-meta-customer-profile",
+    fieldId: null,
+    version: 1,
+    status: "DRAFT",
+    action: "META_ENTITY_CREATED",
+    note: "客户画像实体草稿",
+    snapshot: {
+      entityCode: "CUSTOMER_PROFILE",
+      name: "客户画像模型",
+      type: "CUSTOMER_EXTENSION",
+      status: "DRAFT",
+      schema: {
+        owner: "运营团队",
+        editable: true,
+        notes: "用于承接客户标签与分层字段"
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:12:00.000Z"
+  },
+  {
+    id: "meta-snapshot-field-delivery-v1",
+    targetType: "FIELD_META",
+    targetId: "field-meta-delivery-priority",
+    targetCode: "delivery_priority",
+    entityId: "entity-meta-order-extension",
+    fieldId: "field-meta-delivery-priority",
+    version: 1,
+    status: "DRAFT",
+    action: "META_FIELD_UPDATED",
+    note: "初始草稿字段版本",
+    snapshot: {
+      entityId: "entity-meta-order-extension",
+      fieldCode: "delivery_priority",
+      name: "履约优先级",
+      type: "select",
+      status: "DRAFT",
+      required: false,
+      schema: {
+        options: ["normal", "urgent"],
+        listVisible: true
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:05:00.000Z"
+  },
+  {
+    id: "meta-snapshot-field-delivery-v2",
+    targetType: "FIELD_META",
+    targetId: "field-meta-delivery-priority",
+    targetCode: "delivery_priority",
+    entityId: "entity-meta-order-extension",
+    fieldId: "field-meta-delivery-priority",
+    version: 2,
+    status: "PUBLISHED",
+    action: "META_FIELD_PUBLISHED",
+    note: "增加 vip 选项后发布",
+    snapshot: {
+      entityId: "entity-meta-order-extension",
+      fieldCode: "delivery_priority",
+      name: "履约优先级",
+      type: "select",
+      status: "PUBLISHED",
+      required: false,
+      schema: {
+        options: ["normal", "urgent", "vip"],
+        listVisible: true,
+        detailVisible: true
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:18:00.000Z"
+  },
+  {
+    id: "meta-snapshot-field-review-v1",
+    targetType: "FIELD_META",
+    targetId: "field-meta-review-note",
+    targetCode: "review_note",
+    entityId: "entity-meta-order-extension",
+    fieldId: "field-meta-review-note",
+    version: 1,
+    status: "DRAFT",
+    action: "META_FIELD_CREATED",
+    note: "审核备注草稿",
+    snapshot: {
+      entityId: "entity-meta-order-extension",
+      fieldCode: "review_note",
+      name: "审核备注",
+      type: "text",
+      status: "DRAFT",
+      required: false,
+      schema: {
+        maxLength: 200,
+        formVisible: true,
+        placeholder: "请输入审核补充说明"
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:08:00.000Z"
+  },
+  {
+    id: "meta-snapshot-field-customer-tag-v1",
+    targetType: "FIELD_META",
+    targetId: "field-meta-customer-level-tag",
+    targetCode: "customer_level_tag",
+    entityId: "entity-meta-customer-profile",
+    fieldId: "field-meta-customer-level-tag",
+    version: 1,
+    status: "DRAFT",
+    action: "META_FIELD_CREATED",
+    note: "客户等级标签草稿",
+    snapshot: {
+      entityId: "entity-meta-customer-profile",
+      fieldCode: "customer_level_tag",
+      name: "客户等级标签",
+      type: "select",
+      status: "DRAFT",
+      required: false,
+      schema: {
+        options: ["new", "returning", "vip"],
+        searchVisible: true
+      }
+    },
+    operatorId: "demo-config",
+    createdAt: "2026-03-22T11:14:00.000Z"
   }
 ];
 
@@ -792,6 +983,7 @@ const orders = [
 
 async function main() {
   await prisma.auditLog.deleteMany();
+  await prisma.metaConfigSnapshot.deleteMany();
   await prisma.ruleExecLog.deleteMany();
   await prisma.ruleVersion.deleteMany();
   await prisma.ruleDefinition.deleteMany();
@@ -818,6 +1010,12 @@ async function main() {
   await prisma.entityMeta.createMany({ data: entityMetas });
   await prisma.fieldMeta.createMany({ data: fieldMetas });
   await prisma.pageMeta.createMany({ data: pageMetas });
+  await prisma.metaConfigSnapshot.createMany({
+    data: metaConfigSnapshots.map((snapshot) => ({
+      ...snapshot,
+      createdAt: new Date(snapshot.createdAt)
+    }))
+  });
   await prisma.rolePermission.createMany({
     data: rolePermissionMappings.map(([roleId, permissionId]) => ({
       roleId,

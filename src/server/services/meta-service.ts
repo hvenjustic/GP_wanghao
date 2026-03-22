@@ -30,6 +30,7 @@ type MetaFieldActionInput = {
     fieldCode?: string;
     name?: string;
     type?: string;
+    status?: RecordStatus;
     required?: boolean;
     schemaText?: string;
   };
@@ -60,9 +61,32 @@ type MetaPageVersionActionInput = {
   };
 };
 
+type MetaEntityVersionActionInput = {
+  action: "publish" | "rollback";
+  session: AuthSession;
+  payload: {
+    entityId?: string;
+    snapshotId?: string;
+    reason?: string;
+    note?: string;
+  };
+};
+
+type MetaFieldVersionActionInput = {
+  action: "publish" | "rollback";
+  session: AuthSession;
+  payload: {
+    fieldId?: string;
+    snapshotId?: string;
+    reason?: string;
+    note?: string;
+  };
+};
+
 type MetaOverviewSelection = {
   entityPreviewId?: string;
   pagePreviewId?: string;
+  fieldPreviewId?: string;
 };
 
 export const recordStatusOptions: RecordStatus[] = [
@@ -160,6 +184,266 @@ function summarizeJsonEntries(value: Prisma.JsonValue | null | undefined) {
   return [formatJsonValue(value)];
 }
 
+function jsonContainsString(value: Prisma.JsonValue | null | undefined, target: string): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value === target;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => jsonContainsString(item, target));
+  }
+
+  if (isJsonRecord(value)) {
+    return Object.values(value).some((item) => jsonContainsString(item ?? null, target));
+  }
+
+  return false;
+}
+
+async function getNextSnapshotVersion(targetType: string, targetId: string) {
+  const latest = await prisma.metaConfigSnapshot.findFirst({
+    where: {
+      targetType,
+      targetId
+    },
+    orderBy: {
+      version: "desc"
+    },
+    select: {
+      version: true
+    }
+  });
+
+  return (latest?.version ?? 0) + 1;
+}
+
+function buildEntitySnapshotPayload(entity: {
+  entityCode: string;
+  name: string;
+  type: string;
+  status: RecordStatus;
+  schema: Prisma.JsonValue | null;
+}) {
+  return {
+    entityCode: entity.entityCode,
+    name: entity.name,
+    type: entity.type,
+    status: entity.status,
+    schema: entity.schema
+  } satisfies Prisma.InputJsonObject;
+}
+
+function buildFieldSnapshotPayload(field: {
+  entityId: string;
+  fieldCode: string;
+  name: string;
+  type: string;
+  status: RecordStatus;
+  required: boolean;
+  schema: Prisma.JsonValue | null;
+}) {
+  return {
+    entityId: field.entityId,
+    fieldCode: field.fieldCode,
+    name: field.name,
+    type: field.type,
+    status: field.status,
+    required: field.required,
+    schema: field.schema
+  } satisfies Prisma.InputJsonObject;
+}
+
+async function createMetaSnapshot(input: {
+  targetType: "ENTITY_META" | "FIELD_META";
+  targetId: string;
+  targetCode: string;
+  entityId?: string | null;
+  fieldId?: string | null;
+  status?: string | null;
+  action: string;
+  note?: string | null;
+  snapshot: Prisma.InputJsonValue;
+  operatorId?: string | null;
+  version?: number;
+}) {
+  const version =
+    typeof input.version === "number"
+      ? input.version
+      : await getNextSnapshotVersion(input.targetType, input.targetId);
+
+  await prisma.metaConfigSnapshot.create({
+    data: {
+      targetType: input.targetType,
+      targetId: input.targetId,
+      targetCode: input.targetCode,
+      entityId: input.entityId ?? null,
+      fieldId: input.fieldId ?? null,
+      version,
+      status: input.status ?? null,
+      action: input.action,
+      note: input.note ?? null,
+      snapshot: input.snapshot,
+      operatorId: input.operatorId ?? null
+    }
+  });
+
+  return version;
+}
+
+function parseEntitySnapshot(
+  snapshot: Prisma.JsonValue | null | undefined
+): {
+  entityCode: string;
+  name: string;
+  type: string;
+  status: RecordStatus;
+  schema: Prisma.InputJsonValue | typeof Prisma.DbNull;
+} | null {
+  if (!isJsonRecord(snapshot)) {
+    return null;
+  }
+
+  const status = typeof snapshot.status === "string" ? snapshot.status : "";
+
+  if (
+    typeof snapshot.entityCode !== "string" ||
+    typeof snapshot.name !== "string" ||
+    typeof snapshot.type !== "string" ||
+    !isValidRecordStatus(status)
+  ) {
+    return null;
+  }
+
+  return {
+    entityCode: snapshot.entityCode,
+    name: snapshot.name,
+    type: snapshot.type,
+    status,
+    schema:
+      snapshot.schema === undefined
+        ? Prisma.DbNull
+        : (snapshot.schema as Prisma.InputJsonValue | null) ?? Prisma.DbNull
+  };
+}
+
+function parseFieldSnapshot(
+  snapshot: Prisma.JsonValue | null | undefined
+): {
+  entityId: string;
+  fieldCode: string;
+  name: string;
+  type: string;
+  status: RecordStatus;
+  required: boolean;
+  schema: Prisma.InputJsonValue | typeof Prisma.DbNull;
+} | null {
+  if (!isJsonRecord(snapshot)) {
+    return null;
+  }
+
+  const status = typeof snapshot.status === "string" ? snapshot.status : "";
+
+  if (
+    typeof snapshot.entityId !== "string" ||
+    typeof snapshot.fieldCode !== "string" ||
+    typeof snapshot.name !== "string" ||
+    typeof snapshot.type !== "string" ||
+    !isValidRecordStatus(status)
+  ) {
+    return null;
+  }
+
+  return {
+    entityId: snapshot.entityId,
+    fieldCode: snapshot.fieldCode,
+    name: snapshot.name,
+    type: snapshot.type,
+    status,
+    required: Boolean(snapshot.required),
+    schema:
+      snapshot.schema === undefined
+        ? Prisma.DbNull
+        : (snapshot.schema as Prisma.InputJsonValue | null) ?? Prisma.DbNull
+  };
+}
+
+async function getEntityDependencies(entityId: string) {
+  const [fieldCount, pages, snapshots] = await Promise.all([
+    prisma.fieldMeta.count({
+      where: {
+        entityId
+      }
+    }),
+    prisma.pageMeta.findMany({
+      where: {
+        entityId
+      },
+      orderBy: [{ pageCode: "asc" }, { version: "desc" }]
+    }),
+    prisma.metaConfigSnapshot.count({
+      where: {
+        targetType: "ENTITY_META",
+        targetId: entityId
+      }
+    })
+  ]);
+
+  const publishedPages = pages.filter((page) => page.status === RecordStatus.PUBLISHED);
+  const pageGroups = new Set(pages.map((page) => page.pageCode));
+
+  return {
+    fieldCount,
+    pageCount: pages.length,
+    pageGroupCount: pageGroups.size,
+    publishedPageCount: publishedPages.length,
+    snapshotCount: snapshots
+  };
+}
+
+async function getFieldDependencies(fieldId: string) {
+  const field = await prisma.fieldMeta.findUnique({
+    where: {
+      id: fieldId
+    },
+    include: {
+      entity: true
+    }
+  });
+
+  if (!field) {
+    return null;
+  }
+
+  const [pages, snapshots] = await Promise.all([
+    prisma.pageMeta.findMany({
+      where: {
+        entityId: field.entityId
+      },
+      orderBy: [{ pageCode: "asc" }, { version: "desc" }]
+    }),
+    prisma.metaConfigSnapshot.count({
+      where: {
+        targetType: "FIELD_META",
+        targetId: field.id
+      }
+    })
+  ]);
+
+  const matchedPages = pages.filter((page) => jsonContainsString(page.schema, field.fieldCode));
+
+  return {
+    field,
+    pages: matchedPages,
+    pageCount: matchedPages.length,
+    publishedPageCount: matchedPages.filter((page) => page.status === RecordStatus.PUBLISHED).length,
+    snapshotCount: snapshots
+  };
+}
+
 function isValidRecordStatus(value?: string): value is RecordStatus {
   return recordStatusOptions.includes(value as RecordStatus);
 }
@@ -248,6 +532,9 @@ export async function getMetaManagementOverview(
           in: [
             "META_ENTITY_PUBLISHED",
             "META_ENTITY_DISABLED",
+            "META_ENTITY_ROLLED_BACK",
+            "META_FIELD_PUBLISHED",
+            "META_FIELD_ROLLED_BACK",
             "META_PAGE_PUBLISHED",
             "META_PAGE_VERSION_CLONED",
             "META_PAGE_ROLLED_BACK"
@@ -270,6 +557,7 @@ export async function getMetaManagementOverview(
     name: entity.name,
     type: entity.type,
     status: entity.status,
+    version: entity.version,
     fieldCount: entity._count.fields,
     pageCount: entity._count.pages,
     schemaPreview: previewSchema(entity.schema),
@@ -285,6 +573,8 @@ export async function getMetaManagementOverview(
     fieldCode: field.fieldCode,
     name: field.name,
     type: field.type,
+    status: field.status,
+    version: field.version,
     required: field.required,
     schemaPreview: previewSchema(field.schema),
     rawSchema: stringifySchema(field.schema),
@@ -361,6 +651,11 @@ export async function getMetaManagementOverview(
   const previewFields = previewEntity
     ? fieldItems.filter((item) => item.entityId === previewEntity.id)
     : [];
+  const previewField =
+    previewFields.find((item) => item.id === selection.fieldPreviewId) ??
+    previewFields.find((item) => item.status === RecordStatus.PUBLISHED) ??
+    previewFields[0] ??
+    null;
   const previewPageGroups = previewEntity
     ? pageGroups.filter((item) => item.entityId === previewEntity.id)
     : [];
@@ -380,6 +675,43 @@ export async function getMetaManagementOverview(
           item.entityId === previewPage.entityId && item.pageCode === previewPage.pageCode
       ) ?? null
     : null;
+  const [
+    previewEntityDependencies,
+    previewFieldDependencies,
+    previewEntitySnapshots,
+    previewFieldSnapshots
+  ] = await Promise.all([
+    previewEntity ? getEntityDependencies(previewEntity.id) : null,
+    previewField ? getFieldDependencies(previewField.id) : null,
+    previewEntity
+      ? prisma.metaConfigSnapshot.findMany({
+          where: {
+            targetType: "ENTITY_META",
+            targetId: previewEntity.id
+          },
+          include: {
+            operator: true
+          },
+          orderBy: {
+            version: "desc"
+          }
+        })
+      : [],
+    previewField
+      ? prisma.metaConfigSnapshot.findMany({
+          where: {
+            targetType: "FIELD_META",
+            targetId: previewField.id
+          },
+          include: {
+            operator: true
+          },
+          orderBy: {
+            version: "desc"
+          }
+        })
+      : []
+  ]);
   const releaseHistory = releaseLogs.map((log) => ({
     id: log.id,
     createdAt: formatDateTime(log.createdAt),
@@ -418,6 +750,35 @@ export async function getMetaManagementOverview(
         }
       ]
     : [];
+  const previewFieldDependencyItems =
+    previewFieldDependencies?.pages.map((page) => ({
+      id: page.id,
+      pageCode: page.pageCode,
+      pageType: page.pageType,
+      version: page.version,
+      status: page.status,
+      schemaPreview: previewSchema(page.schema)
+    })) ?? [];
+  const entitySnapshotItems = previewEntitySnapshots.map((snapshot) => ({
+    id: snapshot.id,
+    version: snapshot.version,
+    status: snapshot.status ?? "-",
+    action: snapshot.action,
+    note: snapshot.note ?? "",
+    createdAt: formatDateTime(snapshot.createdAt),
+    operatorName: snapshot.operator?.name ?? "系统",
+    snapshotEntries: summarizeJsonEntries(snapshot.snapshot)
+  }));
+  const fieldSnapshotItems = previewFieldSnapshots.map((snapshot) => ({
+    id: snapshot.id,
+    version: snapshot.version,
+    status: snapshot.status ?? "-",
+    action: snapshot.action,
+    note: snapshot.note ?? "",
+    createdAt: formatDateTime(snapshot.createdAt),
+    operatorName: snapshot.operator?.name ?? "系统",
+    snapshotEntries: summarizeJsonEntries(snapshot.snapshot)
+  }));
 
   return {
     entities: entityItems,
@@ -427,16 +788,27 @@ export async function getMetaManagementOverview(
     preview: {
       entity: previewEntity,
       fields: previewFields,
+      field: previewField,
       pages: previewPages,
       page: previewPage,
       pageGroup: previewPageGroup,
-      readyChecks: entityReadyChecks
+      readyChecks: entityReadyChecks,
+      entityDependencies: previewEntityDependencies,
+      fieldDependencies: previewFieldDependencies
     },
+    entitySnapshots: entitySnapshotItems,
+    fieldSnapshots: fieldSnapshotItems,
+    fieldDependencyItems: previewFieldDependencyItems,
     releaseHistory,
     entityOptions: entityItems.map((entity) => ({
       id: entity.id,
       entityCode: entity.entityCode,
       name: entity.name
+    })),
+    fieldOptions: previewFields.map((field) => ({
+      id: field.id,
+      fieldCode: field.fieldCode,
+      name: field.name
     })),
     options: {
       recordStatuses: recordStatusOptions,
@@ -451,6 +823,7 @@ export async function getMetaManagementOverview(
       versionedPageGroups: pageGroups.length,
       publishedRecords:
         entityItems.filter((item) => item.status === RecordStatus.PUBLISHED).length +
+        fieldItems.filter((item) => item.status === RecordStatus.PUBLISHED).length +
         pageItems.filter((item) => item.status === RecordStatus.PUBLISHED).length
     }
   };
@@ -509,6 +882,13 @@ export async function performMetaEntityAction(
       };
     }
 
+    if (entity._count.fields > 0 || entity._count.pages > 0) {
+      return {
+        ok: false,
+        message: `实体 ${entity.entityCode} 仍存在 ${entity._count.fields} 个字段和 ${entity._count.pages} 份页面配置，不能直接删除。`
+      };
+    }
+
     await prisma.entityMeta.delete({
       where: {
         id
@@ -529,7 +909,7 @@ export async function performMetaEntityAction(
 
     return {
       ok: true,
-      message: `实体 ${entity.entityCode} 已删除，同时级联移除关联字段和页面配置。`
+      message: `实体 ${entity.entityCode} 已删除。`
     };
   }
 
@@ -569,6 +949,18 @@ export async function performMetaEntityAction(
         status,
         ...(schemaResult.provided ? { schema: schemaResult.value } : {})
       }
+    });
+
+    await createMetaSnapshot({
+      targetType: "ENTITY_META",
+      targetId: entity.id,
+      targetCode: entity.entityCode,
+      entityId: entity.id,
+      status: entity.status,
+      action: "META_ENTITY_CREATED",
+      snapshot: buildEntitySnapshotPayload(entity),
+      operatorId: input.session.userId,
+      version: entity.version
     });
 
     await createAuditLog({
@@ -625,7 +1017,10 @@ export async function performMetaEntityAction(
     };
   }
 
-  await prisma.entityMeta.update({
+  const nextVersion = entity.version + 1;
+  const nextSchema = schemaResult.provided ? schemaResult.value : Prisma.DbNull;
+
+  const updatedEntity = await prisma.entityMeta.update({
     where: {
       id
     },
@@ -634,8 +1029,21 @@ export async function performMetaEntityAction(
       name,
       type,
       status,
-      schema: schemaResult.provided ? schemaResult.value : Prisma.DbNull
+      version: nextVersion,
+      schema: nextSchema
     }
+  });
+
+  await createMetaSnapshot({
+    targetType: "ENTITY_META",
+    targetId: updatedEntity.id,
+    targetCode: updatedEntity.entityCode,
+    entityId: updatedEntity.id,
+    status: updatedEntity.status,
+    action: "META_ENTITY_UPDATED",
+    snapshot: buildEntitySnapshotPayload(updatedEntity),
+    operatorId: input.session.userId,
+    version: updatedEntity.version
   });
 
   await createAuditLog({
@@ -672,6 +1080,7 @@ export async function performMetaFieldAction(
   const fieldCode = input.payload.fieldCode?.trim() ?? "";
   const name = input.payload.name?.trim() ?? "";
   const type = input.payload.type?.trim() ?? "";
+  const status = input.payload.status ?? RecordStatus.DRAFT;
   const required = Boolean(input.payload.required);
   const schemaResult = parseSchemaText(input.payload.schemaText ?? "", false);
 
@@ -706,6 +1115,15 @@ export async function performMetaFieldAction(
       };
     }
 
+    const dependencies = await getFieldDependencies(field.id);
+
+    if ((dependencies?.pageCount ?? 0) > 0) {
+      return {
+        ok: false,
+        message: `字段 ${field.fieldCode} 已被 ${dependencies?.pageCount ?? 0} 份页面配置引用，不能直接删除。`
+      };
+    }
+
     await prisma.fieldMeta.delete({
       where: {
         id
@@ -729,10 +1147,18 @@ export async function performMetaFieldAction(
     };
   }
 
-  if (!entityId || !fieldCode || !validateFieldCode(fieldCode) || !name || !type) {
+  if (
+    !entityId ||
+    !fieldCode ||
+    !validateFieldCode(fieldCode) ||
+    !name ||
+    !type ||
+    !isValidRecordStatus(status)
+  ) {
     return {
       ok: false,
-      message: "请完整填写实体、字段编码、名称和类型；字段编码需为小写字母、数字和下划线。"
+      message:
+        "请完整填写实体、字段编码、名称、类型和状态；字段编码需为小写字母、数字和下划线。"
     };
   }
 
@@ -770,9 +1196,23 @@ export async function performMetaFieldAction(
         fieldCode,
         name,
         type,
+        status,
         required,
         ...(schemaResult.provided ? { schema: schemaResult.value } : {})
       }
+    });
+
+    await createMetaSnapshot({
+      targetType: "FIELD_META",
+      targetId: field.id,
+      targetCode: field.fieldCode,
+      entityId: field.entityId,
+      fieldId: field.id,
+      status: field.status,
+      action: "META_FIELD_CREATED",
+      snapshot: buildFieldSnapshotPayload(field),
+      operatorId: input.session.userId,
+      version: field.version
     });
 
     await createAuditLog({
@@ -784,6 +1224,7 @@ export async function performMetaFieldAction(
         entityCode: entity.entityCode,
         fieldCode,
         type,
+        status,
         required
       }
     });
@@ -834,7 +1275,9 @@ export async function performMetaFieldAction(
     };
   }
 
-  await prisma.fieldMeta.update({
+  const nextVersion = field.version + 1;
+  const nextSchema = schemaResult.provided ? schemaResult.value : Prisma.DbNull;
+  const updatedField = await prisma.fieldMeta.update({
     where: {
       id
     },
@@ -843,9 +1286,24 @@ export async function performMetaFieldAction(
       fieldCode,
       name,
       type,
+      status,
+      version: nextVersion,
       required,
-      schema: schemaResult.provided ? schemaResult.value : Prisma.DbNull
+      schema: nextSchema
     }
+  });
+
+  await createMetaSnapshot({
+    targetType: "FIELD_META",
+    targetId: updatedField.id,
+    targetCode: updatedField.fieldCode,
+    entityId: updatedField.entityId,
+    fieldId: updatedField.id,
+    status: updatedField.status,
+    action: "META_FIELD_UPDATED",
+    snapshot: buildFieldSnapshotPayload(updatedField),
+    operatorId: input.session.userId,
+    version: updatedField.version
   });
 
   await createAuditLog({
@@ -857,13 +1315,422 @@ export async function performMetaFieldAction(
       beforeEntityCode: field.entity.entityCode,
       afterEntityCode: entity.entityCode,
       beforeFieldCode: field.fieldCode,
-      afterFieldCode: fieldCode
+      afterFieldCode: fieldCode,
+      beforeStatus: field.status,
+      afterStatus: status
     }
   });
 
   return {
     ok: true,
     message: `字段 ${fieldCode} 已更新。`
+  };
+}
+
+export async function performMetaEntityVersionAction(
+  input: MetaEntityVersionActionInput
+): Promise<ActionResult> {
+  if (!hasPermission(input.session, "meta:manage")) {
+    return {
+      ok: false,
+      message: "当前账号没有管理低代码配置的权限。"
+    };
+  }
+
+  const entityId = input.payload.entityId?.trim() ?? "";
+  const snapshotId = input.payload.snapshotId?.trim() ?? "";
+
+  if (!entityId) {
+    return {
+      ok: false,
+      message: "缺少目标实体 ID。"
+    };
+  }
+
+  const entity = await prisma.entityMeta.findUnique({
+    where: {
+      id: entityId
+    }
+  });
+
+  if (!entity) {
+    return {
+      ok: false,
+      message: "目标实体不存在。"
+    };
+  }
+
+  if (input.action === "publish") {
+    const dependencies = await getEntityDependencies(entity.id);
+
+    if (!dependencies || dependencies.fieldCount === 0 || dependencies.pageCount === 0) {
+      return {
+        ok: false,
+        message: `实体 ${entity.entityCode} 至少需要 1 个字段和 1 份页面配置后才能发布。`
+      };
+    }
+
+    if (entity.status === RecordStatus.PUBLISHED) {
+      return {
+        ok: true,
+        message: `实体 ${entity.entityCode} 当前已经是发布状态。`
+      };
+    }
+
+    const nextVersion = entity.version + 1;
+    const publishedEntity = await prisma.entityMeta.update({
+      where: {
+        id: entity.id
+      },
+      data: {
+        status: RecordStatus.PUBLISHED,
+        version: nextVersion
+      }
+    });
+
+    await createMetaSnapshot({
+      targetType: "ENTITY_META",
+      targetId: publishedEntity.id,
+      targetCode: publishedEntity.entityCode,
+      entityId: publishedEntity.id,
+      status: publishedEntity.status,
+      action: "META_ENTITY_PUBLISHED",
+      note: input.payload.note?.trim() || null,
+      snapshot: buildEntitySnapshotPayload(publishedEntity),
+      operatorId: input.session.userId,
+      version: publishedEntity.version
+    });
+
+    await createAuditLog({
+      operatorId: input.session.userId,
+      action: "META_ENTITY_PUBLISHED",
+      targetType: "ENTITY_META",
+      targetId: publishedEntity.id,
+      detail: {
+        entityCode: publishedEntity.entityCode,
+        version: publishedEntity.version,
+        note: input.payload.note?.trim() || null
+      }
+    });
+
+    return {
+      ok: true,
+      message: `实体 ${publishedEntity.entityCode} 已发布。`
+    };
+  }
+
+  const reason = input.payload.reason?.trim() ?? "";
+
+  if (!snapshotId) {
+    return {
+      ok: false,
+      message: "缺少目标快照 ID。"
+    };
+  }
+
+  if (!reason) {
+    return {
+      ok: false,
+      message: "执行实体回滚时必须填写回滚原因。"
+    };
+  }
+
+  const snapshot = await prisma.metaConfigSnapshot.findUnique({
+    where: {
+      id: snapshotId
+    }
+  });
+
+  if (!snapshot || snapshot.targetType !== "ENTITY_META" || snapshot.targetId !== entity.id) {
+    return {
+      ok: false,
+      message: "目标实体快照不存在。"
+    };
+  }
+
+  const parsedSnapshot = parseEntitySnapshot(snapshot.snapshot);
+
+  if (!parsedSnapshot) {
+    return {
+      ok: false,
+      message: "实体快照内容已损坏，无法回滚。"
+    };
+  }
+
+  const duplicate = await prisma.entityMeta.findFirst({
+    where: {
+      entityCode: parsedSnapshot.entityCode,
+      NOT: {
+        id: entity.id
+      }
+    }
+  });
+
+  if (duplicate) {
+    return {
+      ok: false,
+      message: `实体编码 ${parsedSnapshot.entityCode} 已被其他实体占用，无法回滚。`
+    };
+  }
+
+  const nextVersion = entity.version + 1;
+  const rolledBackEntity = await prisma.entityMeta.update({
+    where: {
+      id: entity.id
+    },
+    data: {
+      entityCode: parsedSnapshot.entityCode,
+      name: parsedSnapshot.name,
+      type: parsedSnapshot.type,
+      status: parsedSnapshot.status,
+      version: nextVersion,
+      schema: parsedSnapshot.schema
+    }
+  });
+
+  await createMetaSnapshot({
+    targetType: "ENTITY_META",
+    targetId: rolledBackEntity.id,
+    targetCode: rolledBackEntity.entityCode,
+    entityId: rolledBackEntity.id,
+    status: rolledBackEntity.status,
+    action: "META_ENTITY_ROLLED_BACK",
+    note: reason,
+    snapshot: buildEntitySnapshotPayload(rolledBackEntity),
+    operatorId: input.session.userId,
+    version: rolledBackEntity.version
+  });
+
+  await createAuditLog({
+    operatorId: input.session.userId,
+    action: "META_ENTITY_ROLLED_BACK",
+    targetType: "ENTITY_META",
+    targetId: rolledBackEntity.id,
+    detail: {
+      entityCode: rolledBackEntity.entityCode,
+      fromSnapshotVersion: snapshot.version,
+      toVersion: rolledBackEntity.version,
+      reason
+    }
+  });
+
+  return {
+    ok: true,
+    message: `实体 ${rolledBackEntity.entityCode} 已回滚到快照 v${snapshot.version}。`
+  };
+}
+
+export async function performMetaFieldVersionAction(
+  input: MetaFieldVersionActionInput
+): Promise<ActionResult> {
+  if (!hasPermission(input.session, "meta:manage")) {
+    return {
+      ok: false,
+      message: "当前账号没有管理低代码配置的权限。"
+    };
+  }
+
+  const fieldId = input.payload.fieldId?.trim() ?? "";
+  const snapshotId = input.payload.snapshotId?.trim() ?? "";
+
+  if (!fieldId) {
+    return {
+      ok: false,
+      message: "缺少目标字段 ID。"
+    };
+  }
+
+  const field = await prisma.fieldMeta.findUnique({
+    where: {
+      id: fieldId
+    },
+    include: {
+      entity: true
+    }
+  });
+
+  if (!field) {
+    return {
+      ok: false,
+      message: "目标字段不存在。"
+    };
+  }
+
+  if (input.action === "publish") {
+    if (field.entity.status === RecordStatus.DISABLED) {
+      return {
+        ok: false,
+        message: `字段所属实体 ${field.entity.entityCode} 已停用，不能发布字段。`
+      };
+    }
+
+    if (field.status === RecordStatus.PUBLISHED) {
+      return {
+        ok: true,
+        message: `字段 ${field.fieldCode} 当前已经是发布状态。`
+      };
+    }
+
+    const nextVersion = field.version + 1;
+    const publishedField = await prisma.fieldMeta.update({
+      where: {
+        id: field.id
+      },
+      data: {
+        status: RecordStatus.PUBLISHED,
+        version: nextVersion
+      }
+    });
+
+    await createMetaSnapshot({
+      targetType: "FIELD_META",
+      targetId: publishedField.id,
+      targetCode: publishedField.fieldCode,
+      entityId: publishedField.entityId,
+      fieldId: publishedField.id,
+      status: publishedField.status,
+      action: "META_FIELD_PUBLISHED",
+      note: input.payload.note?.trim() || null,
+      snapshot: buildFieldSnapshotPayload(publishedField),
+      operatorId: input.session.userId,
+      version: publishedField.version
+    });
+
+    await createAuditLog({
+      operatorId: input.session.userId,
+      action: "META_FIELD_PUBLISHED",
+      targetType: "FIELD_META",
+      targetId: publishedField.id,
+      detail: {
+        entityCode: field.entity.entityCode,
+        fieldCode: publishedField.fieldCode,
+        version: publishedField.version,
+        note: input.payload.note?.trim() || null
+      }
+    });
+
+    return {
+      ok: true,
+      message: `字段 ${publishedField.fieldCode} 已发布。`
+    };
+  }
+
+  const reason = input.payload.reason?.trim() ?? "";
+
+  if (!snapshotId) {
+    return {
+      ok: false,
+      message: "缺少目标快照 ID。"
+    };
+  }
+
+  if (!reason) {
+    return {
+      ok: false,
+      message: "执行字段回滚时必须填写回滚原因。"
+    };
+  }
+
+  const snapshot = await prisma.metaConfigSnapshot.findUnique({
+    where: {
+      id: snapshotId
+    }
+  });
+
+  if (!snapshot || snapshot.targetType !== "FIELD_META" || snapshot.targetId !== field.id) {
+    return {
+      ok: false,
+      message: "目标字段快照不存在。"
+    };
+  }
+
+  const parsedSnapshot = parseFieldSnapshot(snapshot.snapshot);
+
+  if (!parsedSnapshot) {
+    return {
+      ok: false,
+      message: "字段快照内容已损坏，无法回滚。"
+    };
+  }
+
+  const targetEntity = await prisma.entityMeta.findUnique({
+    where: {
+      id: parsedSnapshot.entityId
+    }
+  });
+
+  if (!targetEntity) {
+    return {
+      ok: false,
+      message: "字段快照对应的实体不存在，无法回滚。"
+    };
+  }
+
+  const duplicate = await prisma.fieldMeta.findFirst({
+    where: {
+      entityId: parsedSnapshot.entityId,
+      fieldCode: parsedSnapshot.fieldCode,
+      NOT: {
+        id: field.id
+      }
+    }
+  });
+
+  if (duplicate) {
+    return {
+      ok: false,
+      message: `实体 ${targetEntity.entityCode} 下已存在字段编码 ${parsedSnapshot.fieldCode}，无法回滚。`
+    };
+  }
+
+  const nextVersion = field.version + 1;
+  const rolledBackField = await prisma.fieldMeta.update({
+    where: {
+      id: field.id
+    },
+    data: {
+      entityId: parsedSnapshot.entityId,
+      fieldCode: parsedSnapshot.fieldCode,
+      name: parsedSnapshot.name,
+      type: parsedSnapshot.type,
+      status: parsedSnapshot.status,
+      version: nextVersion,
+      required: parsedSnapshot.required,
+      schema: parsedSnapshot.schema
+    }
+  });
+
+  await createMetaSnapshot({
+    targetType: "FIELD_META",
+    targetId: rolledBackField.id,
+    targetCode: rolledBackField.fieldCode,
+    entityId: rolledBackField.entityId,
+    fieldId: rolledBackField.id,
+    status: rolledBackField.status,
+    action: "META_FIELD_ROLLED_BACK",
+    note: reason,
+    snapshot: buildFieldSnapshotPayload(rolledBackField),
+    operatorId: input.session.userId,
+    version: rolledBackField.version
+  });
+
+  await createAuditLog({
+    operatorId: input.session.userId,
+    action: "META_FIELD_ROLLED_BACK",
+    targetType: "FIELD_META",
+    targetId: rolledBackField.id,
+    detail: {
+      entityCode: targetEntity.entityCode,
+      fieldCode: rolledBackField.fieldCode,
+      fromSnapshotVersion: snapshot.version,
+      toVersion: rolledBackField.version,
+      reason
+    }
+  });
+
+  return {
+    ok: true,
+    message: `字段 ${rolledBackField.fieldCode} 已回滚到快照 v${snapshot.version}。`
   };
 }
 

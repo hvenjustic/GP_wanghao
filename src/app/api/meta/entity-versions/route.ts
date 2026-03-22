@@ -2,15 +2,13 @@ import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
-import { performMetaFieldAction } from "@/server/services/meta-service";
+import { performMetaEntityVersionAction } from "@/server/services/meta-service";
+
+type EntityVersionAction = "publish" | "rollback";
 
 function getSingleFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
-}
-
-function getBooleanValue(formData: FormData, key: string) {
-  return getSingleFormValue(formData, key) === "true";
 }
 
 export async function POST(request: NextRequest) {
@@ -29,30 +27,22 @@ export async function POST(request: NextRequest) {
   }
 
   const formData = await request.formData();
-  const action = getSingleFormValue(formData, "action");
+  const action = getSingleFormValue(formData, "action") as EntityVersionAction;
 
-  if (action !== "create" && action !== "update" && action !== "delete") {
+  if (action !== "publish" && action !== "rollback") {
     const invalidUrl = new URL("/meta", request.url);
-    invalidUrl.searchParams.set("error", "不支持的字段配置操作。");
+    invalidUrl.searchParams.set("error", "不支持的实体版本治理操作。");
     return NextResponse.redirect(invalidUrl, { status: 303 });
   }
 
-  const result = await performMetaFieldAction({
+  const result = await performMetaEntityVersionAction({
     action,
     session,
     payload: {
-      id: getSingleFormValue(formData, "id"),
       entityId: getSingleFormValue(formData, "entityId"),
-      fieldCode: getSingleFormValue(formData, "fieldCode"),
-      name: getSingleFormValue(formData, "name"),
-      type: getSingleFormValue(formData, "type"),
-      status: getSingleFormValue(formData, "status") as
-        | "DRAFT"
-        | "PUBLISHED"
-        | "DISABLED"
-        | undefined,
-      required: getBooleanValue(formData, "required"),
-      schemaText: getSingleFormValue(formData, "schemaText")
+      snapshotId: getSingleFormValue(formData, "snapshotId"),
+      reason: getSingleFormValue(formData, "reason"),
+      note: getSingleFormValue(formData, "note")
     }
   });
 

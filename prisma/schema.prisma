@@ -32,15 +32,16 @@ enum RuleStatus {
 }
 
 model User {
-  id         String     @id @default(cuid())
-  email      String     @unique
-  name       String
-  passwordHash String   @default("")
-  status     String     @default("ACTIVE")
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  roles      UserRole[]
-  auditLogs  AuditLog[]
+  id            String               @id @default(cuid())
+  email         String               @unique
+  name          String
+  passwordHash  String               @default("")
+  status        String               @default("ACTIVE")
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  roles         UserRole[]
+  auditLogs     AuditLog[]
+  metaSnapshots MetaConfigSnapshot[]
 }
 
 model Role {
@@ -153,29 +154,32 @@ model Shipment {
 }
 
 model EntityMeta {
-  id         String      @id @default(cuid())
-  entityCode String      @unique
+  id         String       @id @default(cuid())
+  entityCode String       @unique
   name       String
   type       String
   status     RecordStatus @default(DRAFT)
+  version    Int          @default(1)
   schema     Json?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
   fields     FieldMeta[]
   pages      PageMeta[]
 }
 
 model FieldMeta {
-  id         String     @id @default(cuid())
+  id         String       @id @default(cuid())
   entityId   String
   fieldCode  String
   name       String
   type       String
-  required   Boolean    @default(false)
+  status     RecordStatus @default(DRAFT)
+  version    Int          @default(1)
+  required   Boolean      @default(false)
   schema     Json?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  entity     EntityMeta @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  entity     EntityMeta   @relation(fields: [entityId], references: [id], onDelete: Cascade)
 
   @@unique([entityId, fieldCode])
 }
@@ -259,4 +263,24 @@ model AuditLog {
   detail     Json?
   createdAt  DateTime @default(now())
   operator   User?    @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+}
+
+model MetaConfigSnapshot {
+  id         String   @id @default(cuid())
+  targetType String
+  targetId   String
+  targetCode String
+  entityId   String?
+  fieldId    String?
+  version    Int
+  status     String?
+  action     String
+  note       String?
+  snapshot   Json
+  createdAt  DateTime @default(now())
+  operatorId String?
+  operator   User?    @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@unique([targetType, targetId, version])
+  @@index([targetType, targetId, createdAt])
 }

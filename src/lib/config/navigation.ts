@@ -41,7 +41,7 @@ export const navigationItems: NavigationItem[] = [
   {
     href: "/rules",
     label: "规则编排",
-    description: "整理触发场景、节点类型和版本管理。",
+    description: "设计规则画布、治理版本并执行试运行。",
     permission: "rules:view"
   },
   {

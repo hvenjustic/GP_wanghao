@@ -29,12 +29,16 @@ function getStatusClassName(status: string) {
   }
 }
 
-function buildPreviewHref(entityId: string, pageId?: string) {
+function buildPreviewHref(entityId: string, pageId?: string, fieldId?: string) {
   const query = new URLSearchParams();
   query.set("entityPreviewId", entityId);
 
   if (pageId) {
     query.set("pagePreviewId", pageId);
+  }
+
+  if (fieldId) {
+    query.set("fieldPreviewId", fieldId);
   }
 
   return `/meta?${query.toString()}#preview`;
@@ -51,9 +55,11 @@ export default async function MetaPage({
   const error = getSingleValue(params.error);
   const previewEntityId = getSingleValue(params.entityPreviewId);
   const previewPageId = getSingleValue(params.pagePreviewId);
+  const previewFieldId = getSingleValue(params.fieldPreviewId);
   const overview = await getMetaManagementOverview({
     entityPreviewId: previewEntityId,
-    pagePreviewId: previewPageId
+    pagePreviewId: previewPageId,
+    fieldPreviewId: previewFieldId
   });
   const canManage = hasPermission(currentUser, "meta:manage");
 
@@ -180,6 +186,22 @@ prisma/
           </label>
 
           <label className="form-field">
+            <span className="field-label">焦点字段</span>
+            <select
+              className="select-input"
+              name="fieldPreviewId"
+              defaultValue={overview.preview.field?.id ?? ""}
+            >
+              <option value="">自动选择当前实体下的优先字段</option>
+              {overview.fieldOptions.map((field) => (
+                <option key={field.id} value={field.id}>
+                  {field.fieldCode} · {field.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-field">
             <span className="field-label">预览页面版本</span>
             <select
               className="select-input"
@@ -212,6 +234,7 @@ prisma/
                 <strong>
                   {overview.preview.entity.name} · {overview.preview.entity.entityCode}
                 </strong>
+                <span className="muted">当前版本 v{overview.preview.entity.version}</span>
                 <span className={getStatusClassName(overview.preview.entity.status)}>
                   {overview.preview.entity.status}
                 </span>
@@ -223,9 +246,17 @@ prisma/
               <div className="chip-row">
                 {overview.preview.fields.length > 0 ? (
                   overview.preview.fields.map((field) => (
-                    <span key={field.id} className="chip">
+                    <Link
+                      key={field.id}
+                      href={buildPreviewHref(
+                        overview.preview.entity?.id ?? "",
+                        overview.preview.page?.id,
+                        field.id
+                      )}
+                      className={field.id === overview.preview.field?.id ? "status-pill status-pill-blue" : "chip"}
+                    >
                       {field.fieldCode} · {field.type}
-                    </span>
+                    </Link>
                   ))
                 ) : (
                   <span className="muted">当前实体尚未配置字段。</span>
@@ -506,6 +537,203 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        eyebrow="治理能力"
+        title="实体与字段级版本治理"
+        description="实体和字段当前采用“当前配置 + 快照历史”模式治理。当前行上的版本号表示最新配置版本，历史快照用于回滚和审计。"
+      >
+        <div className="two-col-grid">
+          <div className="version-card">
+            {overview.preview.entity ? (
+              <>
+                <div className="version-card-header">
+                  <div className="table-cell-stack">
+                    <strong>
+                      {overview.preview.entity.entityCode} · 当前 v{overview.preview.entity.version}
+                    </strong>
+                    <span className={getStatusClassName(overview.preview.entity.status)}>
+                      {overview.preview.entity.status}
+                    </span>
+                    <span className="muted">
+                      字段 {overview.preview.entityDependencies?.fieldCount ?? 0} 个 · 页面{" "}
+                      {overview.preview.entityDependencies?.pageCount ?? 0} 份 · 快照{" "}
+                      {overview.preview.entityDependencies?.snapshotCount ?? 0} 条
+                    </span>
+                  </div>
+                  {canManage && overview.preview.entity.status !== "PUBLISHED" ? (
+                    <form className="inline-form" action="/api/meta/entity-versions" method="post">
+                      <input type="hidden" name="action" value="publish" />
+                      <input type="hidden" name="entityId" value={overview.preview.entity.id} />
+                      <input
+                        className="text-input input-compact"
+                        name="note"
+                        placeholder="发布备注，可选"
+                      />
+                      <button type="submit" className="button-primary">
+                        发布当前实体
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
+
+                {overview.entitySnapshots.length > 0 ? (
+                  <div className="version-list">
+                    {overview.entitySnapshots.map((snapshot) => (
+                      <div key={snapshot.id} className="version-row">
+                        <div className="version-row-head">
+                          <div className="table-cell-stack">
+                            <strong>实体快照 v{snapshot.version}</strong>
+                            <span className={getStatusClassName(snapshot.status)}>{snapshot.status}</span>
+                            <span className="muted">
+                              {snapshot.action} · {snapshot.createdAt} · {snapshot.operatorName}
+                            </span>
+                            {snapshot.note ? <span className="muted">{snapshot.note}</span> : null}
+                          </div>
+                        </div>
+                        <div className="table-cell-stack">
+                          {snapshot.snapshotEntries.map((entry) => (
+                            <span key={`${snapshot.id}-${entry}`} className="muted">
+                              {entry}
+                            </span>
+                          ))}
+                        </div>
+                        {canManage && snapshot.version !== overview.preview.entity?.version ? (
+                          <form className="inline-form" action="/api/meta/entity-versions" method="post">
+                            <input type="hidden" name="action" value="rollback" />
+                            <input type="hidden" name="entityId" value={overview.preview.entity.id} />
+                            <input type="hidden" name="snapshotId" value={snapshot.id} />
+                            <input
+                              className="text-input"
+                              name="reason"
+                              placeholder="实体回滚原因，必填"
+                              required
+                            />
+                            <button type="submit" className="button-danger">
+                              回滚到 v{snapshot.version}
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前实体还没有快照历史。</strong>
+                    <span className="muted">保存、发布或回滚实体后，这里会出现版本记录。</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="empty-state">
+                <strong>当前没有可治理的实体。</strong>
+                <span className="muted">请先新增实体。</span>
+              </div>
+            )}
+          </div>
+
+          <div className="version-card">
+            {overview.preview.field ? (
+              <>
+                <div className="version-card-header">
+                  <div className="table-cell-stack">
+                    <strong>
+                      {overview.preview.field.fieldCode} · 当前 v{overview.preview.field.version}
+                    </strong>
+                    <span className={getStatusClassName(overview.preview.field.status)}>
+                      {overview.preview.field.status}
+                    </span>
+                    <span className="muted">
+                      引用页面 {overview.preview.fieldDependencies?.pageCount ?? 0} 份，其中已发布{" "}
+                      {overview.preview.fieldDependencies?.publishedPageCount ?? 0} 份；快照{" "}
+                      {overview.preview.fieldDependencies?.snapshotCount ?? 0} 条
+                    </span>
+                  </div>
+                  {canManage && overview.preview.field.status !== "PUBLISHED" ? (
+                    <form className="inline-form" action="/api/meta/field-versions" method="post">
+                      <input type="hidden" name="action" value="publish" />
+                      <input type="hidden" name="fieldId" value={overview.preview.field.id} />
+                      <input
+                        className="text-input input-compact"
+                        name="note"
+                        placeholder="发布备注，可选"
+                      />
+                      <button type="submit" className="button-primary">
+                        发布当前字段
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
+
+                <div className="table-cell-stack">
+                  <strong>依赖分析</strong>
+                  {overview.fieldDependencyItems.length > 0 ? (
+                    overview.fieldDependencyItems.map((item) => (
+                      <span key={item.id} className="muted">
+                        {item.pageCode} · v{item.version} · {item.status} · {item.schemaPreview}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="muted">当前字段尚未被任何页面 Schema 引用，可安全删除。</span>
+                  )}
+                </div>
+
+                {overview.fieldSnapshots.length > 0 ? (
+                  <div className="version-list">
+                    {overview.fieldSnapshots.map((snapshot) => (
+                      <div key={snapshot.id} className="version-row">
+                        <div className="version-row-head">
+                          <div className="table-cell-stack">
+                            <strong>字段快照 v{snapshot.version}</strong>
+                            <span className={getStatusClassName(snapshot.status)}>{snapshot.status}</span>
+                            <span className="muted">
+                              {snapshot.action} · {snapshot.createdAt} · {snapshot.operatorName}
+                            </span>
+                            {snapshot.note ? <span className="muted">{snapshot.note}</span> : null}
+                          </div>
+                        </div>
+                        <div className="table-cell-stack">
+                          {snapshot.snapshotEntries.map((entry) => (
+                            <span key={`${snapshot.id}-${entry}`} className="muted">
+                              {entry}
+                            </span>
+                          ))}
+                        </div>
+                        {canManage && snapshot.version !== overview.preview.field?.version ? (
+                          <form className="inline-form" action="/api/meta/field-versions" method="post">
+                            <input type="hidden" name="action" value="rollback" />
+                            <input type="hidden" name="fieldId" value={overview.preview.field.id} />
+                            <input type="hidden" name="snapshotId" value={snapshot.id} />
+                            <input
+                              className="text-input"
+                              name="reason"
+                              placeholder="字段回滚原因，必填"
+                              required
+                            />
+                            <button type="submit" className="button-danger">
+                              回滚到 v{snapshot.version}
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前字段还没有快照历史。</strong>
+                    <span className="muted">保存、发布或回滚字段后，这里会出现版本记录。</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="empty-state">
+                <strong>当前实体下没有可治理的字段。</strong>
+                <span className="muted">请先新增字段。</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
         eyebrow="实体配置"
         title="实体建模 CRUD"
         description="实体是字段和页面配置的挂载点。实体编码建议保持稳定，不要随意重命名。"
@@ -570,7 +798,7 @@ prisma/
           <thead>
             <tr>
               <th>实体</th>
-              <th>类型 / 状态</th>
+              <th>类型 / 状态 / 版本</th>
               <th>字段 / 页面</th>
               <th>Schema 摘要</th>
               <th>更新时间</th>
@@ -590,6 +818,7 @@ prisma/
                   <div className="table-cell-stack">
                     <span className="status-pill status-pill-blue">{entity.type}</span>
                     <span className={getStatusClassName(entity.status)}>{entity.status}</span>
+                    <span className="muted">当前 v{entity.version}</span>
                   </div>
                 </td>
                 <td>
@@ -708,6 +937,16 @@ prisma/
                 ))}
               </select>
             </label>
+            <label className="form-field">
+              <span className="field-label">字段状态</span>
+              <select className="select-input" name="status" defaultValue="DRAFT">
+                {overview.options.recordStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="checkbox-line">
               <input type="checkbox" name="required" value="true" />
               设置为必填字段
@@ -733,7 +972,7 @@ prisma/
             <tr>
               <th>字段</th>
               <th>所属实体</th>
-              <th>类型 / 必填</th>
+              <th>类型 / 状态 / 版本</th>
               <th>Schema 摘要</th>
               <th>更新时间</th>
               {canManage ? <th>维护</th> : null}
@@ -757,6 +996,7 @@ prisma/
                 <td>
                   <div className="table-cell-stack">
                     <span className="status-pill status-pill-blue">{field.type}</span>
+                    <span className={getStatusClassName(field.status)}>{field.status}</span>
                     <span
                       className={
                         field.required
@@ -766,6 +1006,7 @@ prisma/
                     >
                       {field.required ? "必填" : "选填"}
                     </span>
+                    <span className="muted">当前 v{field.version}</span>
                   </div>
                 </td>
                 <td className="muted">{field.schemaPreview}</td>
@@ -773,6 +1014,12 @@ prisma/
                 {canManage ? (
                   <td>
                     <div className="action-stack">
+                      <Link
+                        href={buildPreviewHref(field.entityId, overview.preview.page?.id, field.id)}
+                        className="button-secondary"
+                      >
+                        分析依赖
+                      </Link>
                       <form
                         className="table-form table-form-wide"
                         action="/api/meta/fields"
@@ -798,6 +1045,13 @@ prisma/
                           {overview.options.fieldTypes.map((type) => (
                             <option key={type} value={type}>
                               {type}
+                            </option>
+                          ))}
+                        </select>
+                        <select className="select-input" name="status" defaultValue={field.status}>
+                          {overview.options.recordStatuses.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
                             </option>
                           ))}
                         </select>
