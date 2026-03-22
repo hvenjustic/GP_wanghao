@@ -14,7 +14,11 @@ import {
   type Edge,
   type Node
 } from "@xyflow/react";
-import { ruleNodeTemplates } from "@/features/rules/config/rule-scenes";
+import {
+  ruleNodeConfigSemantics,
+  ruleNodeConfigTemplates,
+  ruleNodeTemplates
+} from "@/features/rules/config/rule-scenes";
 import {
   createDefaultRuleGraph,
   createRuleNode,
@@ -84,6 +88,22 @@ function toStoredGraph(nodes: CanvasNode[], edges: CanvasEdge[]): RuleGraph {
   };
 }
 
+function getTemplateConfig(kind: RuleNodeKind, scene: string): RuleGraphNode["data"]["config"] {
+  const template = structuredClone(ruleNodeConfigTemplates[kind]) as Exclude<
+    RuleGraphNode["data"]["config"],
+    undefined
+  >;
+
+  if (kind === "start" && template && typeof template === "object" && !Array.isArray(template)) {
+    return {
+      ...template,
+      scene
+    };
+  }
+
+  return template;
+}
+
 export function RuleDesigner({
   inputName,
   initialGraphText,
@@ -100,6 +120,12 @@ export function RuleDesigner({
   const [configError, setConfigError] = useState("");
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedTemplate = selectedNode
+    ? getTemplateConfig(selectedNode.data.kind, scene)
+    : null;
+  const selectedSemantics = selectedNode
+    ? ruleNodeConfigSemantics[selectedNode.data.kind]
+    : [];
 
   useEffect(() => {
     if (!selectedNode && nodes[0]) {
@@ -203,6 +229,16 @@ export function RuleDesigner({
     } catch {
       setConfigError("节点配置 JSON 解析失败，请输入合法对象。");
     }
+  }
+
+  function handleLoadTemplate() {
+    if (!selectedNode || readOnly) {
+      return;
+    }
+
+    const template = getTemplateConfig(selectedNode.data.kind, scene);
+    setConfigText(JSON.stringify(template ?? {}, null, 2));
+    setConfigError("");
   }
 
   function handleDeleteNode() {
@@ -324,11 +360,32 @@ export function RuleDesigner({
                 />
               </label>
 
+              <div className="table-cell-stack">
+                <strong>节点配置语义</strong>
+                {selectedSemantics.map((item) => (
+                  <span key={`${selectedNode.id}-${item}`} className="muted">
+                    {item}
+                  </span>
+                ))}
+              </div>
+
+              {selectedTemplate ? (
+                <div className="table-cell-stack">
+                  <strong>推荐配置模板</strong>
+                  <pre className="code-block">
+                    {JSON.stringify(selectedTemplate, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
+
               {configError ? <div className="alert-banner alert-banner-error">{configError}</div> : null}
 
               <div className="action-stack">
                 {!readOnly ? (
                   <>
+                    <button type="button" className="button-secondary" onClick={handleLoadTemplate}>
+                      载入配置模板
+                    </button>
                     <button type="button" className="button-primary" onClick={handleApplyConfig}>
                       应用节点配置
                     </button>

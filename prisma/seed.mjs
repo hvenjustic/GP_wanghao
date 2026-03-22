@@ -458,6 +458,14 @@ const ruleDefinitions = [
     type: "WAREHOUSE_ASSIGN",
     scene: "审核通过后",
     status: "PUBLISHED"
+  },
+  {
+    id: "rule-def-shipment-express-guard",
+    ruleCode: "RULE_SHIPMENT_EXPRESS_GUARD",
+    name: "加急订单顺丰校验",
+    type: "SHIPMENT_CHECK",
+    scene: "发货前校验",
+    status: "PUBLISHED"
   }
 ];
 
@@ -512,6 +520,147 @@ const ruleVersions = [
     publishInfo: {
       publishedBy: "系统管理员",
       publishedAt: "2026-03-22 08:50"
+    }
+  },
+  {
+    id: "rule-ver-shipment-express-guard-v3",
+    ruleId: "rule-def-shipment-express-guard",
+    version: 3,
+    graph: {
+      nodes: [
+        {
+          id: "start-shipment-guard",
+          position: {
+            x: 40,
+            y: 140
+          },
+          data: {
+            kind: "start",
+            label: "发货前开始",
+            detail: "场景：发货前校验",
+            config: {
+              scene: "发货前校验",
+              description: "针对发货请求里的物流参数做阻断型校验。"
+            }
+          }
+        },
+        {
+          id: "condition-shipment-urgent",
+          position: {
+            x: 280,
+            y: 140
+          },
+          data: {
+            kind: "condition",
+            label: "是否加急订单",
+            detail: "只有加急订单才要求必须走顺丰。",
+            config: {
+              field: "tags",
+              operator: "includes",
+              value: "加急"
+            }
+          }
+        },
+        {
+          id: "condition-shipment-company",
+          position: {
+            x: 540,
+            y: 140
+          },
+          data: {
+            kind: "condition",
+            label: "物流公司是否顺丰",
+            detail: "若当前发货请求的物流公司不是顺丰，则阻断发货。",
+            config: {
+              field: "payload.shippingCompany",
+              operator: "neq",
+              value: "顺丰速运"
+            }
+          }
+        },
+        {
+          id: "action-shipment-block",
+          position: {
+            x: 820,
+            y: 72
+          },
+          data: {
+            kind: "action",
+            label: "阻断发货并锁单",
+            detail: "自动锁单、标记异常、写备注并打上校验标签。",
+            config: {
+              actions: [
+                {
+                  action: "lock-order",
+                  note: "加急订单必须使用顺丰，当前物流公司不符合要求。",
+                  stopProcessing: true
+                },
+                {
+                  action: "mark-abnormal"
+                },
+                {
+                  action: "append-tag",
+                  tag: "发货校验拦截"
+                },
+                {
+                  action: "set-review-mode",
+                  reviewMode: "发货前规则拦截"
+                },
+                {
+                  action: "set-note",
+                  note: "发货前校验命中：加急订单必须使用顺丰。"
+                }
+              ]
+            }
+          }
+        },
+        {
+          id: "result-shipment-block",
+          position: {
+            x: 1080,
+            y: 72
+          },
+          data: {
+            kind: "result",
+            label: "阻断发货并自动锁单",
+            detail: "命中后当前发货动作结束，交由人工处理。",
+            config: {
+              result: "BLOCK_SHIPMENT",
+              decision: "LOCK_ORDER",
+              description: "加急订单发货前校验未通过。"
+            }
+          }
+        }
+      ],
+      edges: [
+        {
+          id: "edge-shipment-1",
+          source: "start-shipment-guard",
+          target: "condition-shipment-urgent"
+        },
+        {
+          id: "edge-shipment-2",
+          source: "condition-shipment-urgent",
+          target: "condition-shipment-company",
+          label: "命中"
+        },
+        {
+          id: "edge-shipment-3",
+          source: "condition-shipment-company",
+          target: "action-shipment-block",
+          label: "命中"
+        },
+        {
+          id: "edge-shipment-4",
+          source: "action-shipment-block",
+          target: "result-shipment-block"
+        }
+      ]
+    },
+    publishInfo: {
+      publishedBy: "配置实施",
+      publishedAt: "2026-03-22 09:30",
+      note: "发货前校验示例发布规则"
     }
   }
 ];
@@ -591,6 +740,26 @@ const ruleExecLogs = [
       path: "开始 -> 华东区域 -> 华东一仓"
     },
     createdAt: "2026-03-22T10:23:00.000Z"
+  },
+  {
+    id: "rule-log-005",
+    ruleVersionId: "rule-ver-shipment-express-guard-v3",
+    orderId: null,
+    scene: "发货前校验",
+    status: "BLOCKED",
+    durationMs: 118,
+    input: {
+      orderNo: "GP202603220004",
+      tags: ["加急"],
+      shippingCompany: "中通快递",
+      trackingNo: "ZT9988776655"
+    },
+    result: {
+      decision: "LOCK_ORDER",
+      path: "发货前开始 -> 是否加急订单 -> 物流公司是否顺丰 -> 阻断发货并锁单 -> 阻断发货并自动锁单",
+      reason: "加急订单必须使用顺丰，当前物流公司不符合要求。"
+    },
+    createdAt: "2026-03-22T10:31:00.000Z"
   }
 ];
 

@@ -238,10 +238,13 @@ function buildDefaultRuleSampleInput(scene: string, type: string) {
   if (scene === "发货前校验") {
     return JSON.stringify(
       {
-        orderNo: "GP202603220099",
-        logisticsCompany: "中通快递",
-        trackingNo: "ZT9988776655",
-        receiverMobile: "13800000000"
+        orderNo: "GP202603220004",
+        tags: ["加急"],
+        payload: {
+          shippingCompany: "中通快递",
+          trackingNo: "ZT9988776655"
+        },
+        warehouseCode: "WH-EAST-01"
       },
       null,
       2

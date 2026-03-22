@@ -4,6 +4,11 @@ import { SectionCard } from "@/components/ui/section-card";
 import { hasPermission } from "@/lib/auth/types";
 import { requirePermission } from "@/lib/auth/guards";
 import {
+  ruleActionOptions,
+  ruleConditionOperators,
+  ruleFieldOptions,
+  ruleNodeConfigSemantics,
+  ruleNodeConfigTemplates,
   ruleNodeTemplates,
   ruleNodeTypes,
   ruleScenes
@@ -61,6 +66,8 @@ export default async function RulesPage({
     versionId: selectedVersionId
   });
   const canManage = hasPermission(currentUser, "rules:manage");
+  const shipmentExampleRule =
+    overview.rules.find((rule) => rule.ruleCode === "RULE_SHIPMENT_EXPRESS_GUARD") ?? null;
 
   return (
     <div className="page-grid">
@@ -68,7 +75,7 @@ export default async function RulesPage({
         <div>
           <h1 className="app-header-title">规则编排引擎</h1>
           <p className="app-header-subtitle">
-            当前已经接通数据库、规则版本、试运行日志和可视化画布。规则页现在不是占位说明，而是可直接创建、设计、发布和回滚的第一版工作台。
+            当前已经接通数据库、规则版本、试运行日志和可视化画布，并补上了节点配置语义和发货前校验示例规则。规则页现在不是占位说明，而是可直接创建、设计、发布和回滚的第一版工作台。
           </p>
         </div>
         <div className="app-header-meta">
@@ -150,6 +157,179 @@ export default async function RulesPage({
           </ul>
         </SectionCard>
       </div>
+
+      <SectionCard
+        eyebrow="节点语义"
+        title="规则节点配置 JSON 约定"
+        description="设计器里的节点配置不再是纯自由 JSON，而是围绕字段路径、条件操作符和动作语义做收敛，便于规则真正驱动订单动作链路。"
+      >
+        <div className="two-col-grid">
+          <div className="version-card">
+            <div className="table-cell-stack">
+              <strong>常用条件字段</strong>
+              <span className="muted">
+                字段路径支持订单主字段、扩展字段和动作入参上下文，例如 `payload.shippingCompany`。
+              </span>
+            </div>
+            <div className="chip-row">
+              {ruleFieldOptions.map((field) => (
+                <span key={field} className="chip">
+                  {field}
+                </span>
+              ))}
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>操作符</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ruleConditionOperators.map((operator) => (
+                  <tr key={operator.value}>
+                    <td>{operator.value}</td>
+                    <td>
+                      <div className="table-cell-stack">
+                        <strong>{operator.label}</strong>
+                        <span className="muted">{operator.description}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="version-card">
+            <div className="table-cell-stack">
+              <strong>可执行动作</strong>
+              <span className="muted">动作节点支持串行动作数组，可直接落到锁单、审核、分仓、标签和备注写入。</span>
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>动作</th>
+                  <th>业务语义</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ruleActionOptions.map((action) => (
+                  <tr key={action.value}>
+                    <td>{action.value}</td>
+                    <td>
+                      <div className="table-cell-stack">
+                        <strong>{action.label}</strong>
+                        <span className="muted">{action.description}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="two-col-grid">
+          <div className="version-card">
+            <div className="table-cell-stack">
+              <strong>节点语义说明</strong>
+              {ruleNodeTemplates.map((template) => (
+                <div key={template.kind} className="table-cell-stack">
+                  <span className="timeline-title">{template.label}</span>
+                  {ruleNodeConfigSemantics[template.kind].map((item) => (
+                    <span key={`${template.kind}-${item}`} className="muted">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="version-card">
+            <div className="table-cell-stack">
+              <strong>推荐 JSON 模板</strong>
+              <span className="muted">设计器右侧选中节点后，可以直接载入对应模板再调整字段和值。</span>
+            </div>
+            {ruleNodeTemplates.map((template) => (
+              <div key={`template-${template.kind}`} className="table-cell-stack">
+                <span className="timeline-title">{template.label}</span>
+                <pre className="code-block">
+                  {JSON.stringify(
+                    template.kind === "start"
+                      ? {
+                          ...ruleNodeConfigTemplates.start,
+                          scene: "发货前校验"
+                        }
+                      : ruleNodeConfigTemplates[template.kind],
+                    null,
+                    2
+                  )}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        eyebrow="示例规则"
+        title="发货前校验示例发布规则"
+        description="种子数据已内置一条已发布的发货前校验规则，用来演示如何通过节点配置语义驱动锁单、异常标记和备注写入。"
+      >
+        {shipmentExampleRule ? (
+          <div className="two-col-grid">
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>{shipmentExampleRule.name}</strong>
+                <span className="muted">{shipmentExampleRule.ruleCode}</span>
+                <span className="status-pill status-pill-green">
+                  {shipmentExampleRule.scene} · {shipmentExampleRule.status}
+                </span>
+                <span className="muted">
+                  示例逻辑：加急订单若发货请求里的 `shippingCompany` 不是“顺丰速运”，则自动锁单、标记异常并阻断发货。
+                </span>
+              </div>
+              <div className="action-stack">
+                <Link
+                  href={buildRuleHref(
+                    shipmentExampleRule.id,
+                    shipmentExampleRule.activeVersionId ?? undefined
+                  )}
+                  className="button-primary"
+                >
+                  打开示例规则
+                </Link>
+                <Link
+                  href={`/rule-logs?ruleCode=${encodeURIComponent(shipmentExampleRule.ruleCode)}`}
+                  className="button-secondary"
+                >
+                  查看示例日志
+                </Link>
+              </div>
+            </div>
+
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>推荐链路</strong>
+                <span className="muted">开始节点：声明场景为“发货前校验”</span>
+                <span className="muted">条件节点 1：`tags includes 加急`</span>
+                <span className="muted">条件节点 2：`payload.shippingCompany neq 顺丰速运`</span>
+                <span className="muted">
+                  动作节点：`lock-order + mark-abnormal + append-tag + set-note`
+                </span>
+                <span className="muted">结果节点：输出“阻断发货并自动锁单”</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>当前数据库还没有内置示例规则。</strong>
+            <span className="muted">执行 `pnpm db:seed` 后，会自动生成 `RULE_SHIPMENT_EXPRESS_GUARD` 已发布版本。</span>
+          </div>
+        )}
+      </SectionCard>
 
       {!canManage ? (
         <div className="alert-banner">
