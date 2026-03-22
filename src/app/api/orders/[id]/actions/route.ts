@@ -77,6 +77,7 @@ export async function POST(
 
   revalidatePath("/orders");
   revalidatePath(`/orders/${id}`);
+  revalidatePath("/rule-logs");
 
   const targetUrl = new URL(redirectTo, request.url);
   targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);

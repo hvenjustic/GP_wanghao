@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
   });
 
   revalidatePath("/orders");
+  revalidatePath("/rule-logs");
   for (const orderId of orderIds) {
     revalidatePath(`/orders/${orderId}`);
   }

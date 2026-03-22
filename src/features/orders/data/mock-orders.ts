@@ -49,10 +49,13 @@ export type OrderShipment = {
 
 export type OrderRuleHit = {
   id: string;
+  ruleCode?: string;
+  scene?: string;
   ruleName: string;
   version: string;
   path: string;
   result: string;
+  decision?: string;
   executedAt: string;
 };
 

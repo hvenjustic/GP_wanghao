@@ -11,6 +11,7 @@ import {
 } from "@/features/orders/data/mock-orders";
 import { prisma } from "@/lib/db/prisma";
 import { hasPermission, type AuthSession, type PermissionCode } from "@/lib/auth/types";
+import { executeOrderRulesForScene } from "@/server/services/order-rule-engine";
 
 export type OrderListFilters = {
   keyword: string;
@@ -82,6 +83,13 @@ type OrderExtensionShape = {
   ruleHits?: OrderRuleHit[];
 };
 
+class OrderActionValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OrderActionValidationError";
+  }
+}
+
 const globalForOrderStore = globalThis as unknown as {
   orderStore?: OrderStoreState;
 };
@@ -150,10 +158,13 @@ function parseOrderExtension(value: Prisma.JsonValue | null | undefined): OrderE
 
         accumulator.push({
           id: typeof item.id === "string" ? item.id : `rule-hit-${Math.random()}`,
+          ruleCode: typeof item.ruleCode === "string" ? item.ruleCode : undefined,
+          scene: typeof item.scene === "string" ? item.scene : undefined,
           ruleName: typeof item.ruleName === "string" ? item.ruleName : "未命名规则",
           version: typeof item.version === "string" ? item.version : "v1.0",
           path: typeof item.path === "string" ? item.path : "-",
           result: typeof item.result === "string" ? item.result : "-",
+          decision: typeof item.decision === "string" ? item.decision : undefined,
           executedAt:
             typeof item.executedAt === "string" ? item.executedAt : formatNow()
         });
@@ -216,6 +227,24 @@ function appendTag(record: OrderRecord, tag: string) {
 
 function removeTag(record: OrderRecord, tag: string) {
   record.tags = record.tags.filter((item) => item !== tag);
+}
+
+function buildOrderLifecycleSnapshot(
+  record: Pick<
+    OrderRecord,
+    "status" | "isLocked" | "isAbnormal" | "warehouseCode" | "warehouseName" | "shipment" | "reviewMode" | "tags"
+  >
+) {
+  return {
+    status: record.status,
+    isLocked: record.isLocked,
+    isAbnormal: record.isAbnormal,
+    warehouseCode: record.warehouseCode,
+    warehouseName: record.warehouseName,
+    shipment: record.shipment,
+    reviewMode: record.reviewMode,
+    tags: record.tags
+  };
 }
 
 function getRequiredPermissionForAction(action: OrderActionCode): PermissionCode {
@@ -955,131 +984,283 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
     };
   }
 
-  const applyResult = applyOrderActionToRecord(
-    currentRecord,
-    input.action,
-    input.session,
-    input.payload
-  );
-
-  if (!applyResult.ok) {
-    return applyResult;
+  if (
+    input.action === "ship-order" &&
+    (!input.payload?.trackingNo?.trim() || !input.payload?.shippingCompany?.trim())
+  ) {
+    return {
+      ok: false,
+      message: "发货需要填写物流公司和物流单号。"
+    };
   }
 
-  const nextRecord = applyResult.nextRecord;
+  let manualMessage = "";
+  let finalRecord = cloneOrder(currentRecord);
+  let blockedByRules = false;
+  const ruleExecutionResults: Array<
+    Awaited<ReturnType<typeof executeOrderRulesForScene>> & {
+      scene: "订单创建后" | "审核通过后" | "发货前校验";
+    }
+  > = [];
 
-  await prisma.$transaction(async (tx) => {
-    const updateData: Prisma.OrderUpdateInput = {
-      status: toOrderStatusEnum(nextRecord.status),
-      isLocked: nextRecord.isLocked,
-      isAbnormal: nextRecord.isAbnormal,
-      reviewMode: nextRecord.reviewMode,
-      extension: buildOrderExtension(nextRecord)
-    };
+  try {
+    await prisma.$transaction(async (tx) => {
+      let workingRecord = cloneOrder(currentRecord);
+      let manualApplyResult: Extract<ActionApplyResult, { ok: true }> | null = null;
 
-    if (input.action === "assign-warehouse") {
-      const warehouse = nextRecord.warehouseCode
-        ? await tx.warehouse.findUnique({
-            where: {
-              code: nextRecord.warehouseCode
-            }
-          })
-        : null;
+      if (input.action === "ship-order") {
+        const preShipmentRules = await executeOrderRulesForScene({
+          tx,
+          order: workingRecord,
+          scene: "发货前校验",
+          payload: input.payload,
+          requestedAction: input.action
+        });
 
-      if (!warehouse) {
-        throw new Error("目标仓库不存在，无法完成分仓。");
+        if (preShipmentRules.hitItems.length > 0) {
+          ruleExecutionResults.push({
+            ...preShipmentRules,
+            scene: "发货前校验"
+          });
+        }
+
+        workingRecord = preShipmentRules.nextRecord;
+        blockedByRules = preShipmentRules.blockedRequestedAction;
       }
 
-      updateData.warehouse = {
-        connect: {
-          id: warehouse.id
+      if (!blockedByRules) {
+        const applyResult = applyOrderActionToRecord(
+          workingRecord,
+          input.action,
+          input.session,
+          input.payload
+        );
+
+        if (!applyResult.ok) {
+          throw new OrderActionValidationError(applyResult.message);
         }
+
+        manualApplyResult = applyResult;
+        manualMessage = applyResult.message;
+        workingRecord = applyResult.nextRecord;
+      }
+
+      if (!blockedByRules && input.action === "approve-review") {
+        const postApproveRules = await executeOrderRulesForScene({
+          tx,
+          order: workingRecord,
+          scene: "审核通过后",
+          payload: input.payload,
+          requestedAction: input.action
+        });
+
+        if (postApproveRules.hitItems.length > 0) {
+          ruleExecutionResults.push({
+            ...postApproveRules,
+            scene: "审核通过后"
+          });
+        }
+
+        workingRecord = postApproveRules.nextRecord;
+      }
+
+      if (
+        !blockedByRules &&
+        (input.action === "unlock-order" || input.action === "clear-abnormal")
+      ) {
+        const postReviewRules = await executeOrderRulesForScene({
+          tx,
+          order: workingRecord,
+          scene: "订单创建后",
+          payload: input.payload,
+          requestedAction: input.action
+        });
+
+        if (postReviewRules.hitItems.length > 0) {
+          ruleExecutionResults.push({
+            ...postReviewRules,
+            scene: "订单创建后"
+          });
+        }
+
+        workingRecord = postReviewRules.nextRecord;
+
+        if (workingRecord.status === "PENDING_WAREHOUSE") {
+          const autoWarehouseRules = await executeOrderRulesForScene({
+            tx,
+            order: workingRecord,
+            scene: "审核通过后",
+            payload: input.payload,
+            requestedAction: input.action
+          });
+
+          if (autoWarehouseRules.hitItems.length > 0) {
+            ruleExecutionResults.push({
+              ...autoWarehouseRules,
+              scene: "审核通过后"
+            });
+          }
+
+          workingRecord = autoWarehouseRules.nextRecord;
+        }
+      }
+
+      finalRecord = workingRecord;
+
+      const updateData: Prisma.OrderUpdateInput = {
+        status: toOrderStatusEnum(finalRecord.status),
+        isLocked: finalRecord.isLocked,
+        isAbnormal: finalRecord.isAbnormal,
+        reviewMode: finalRecord.reviewMode,
+        extension: buildOrderExtension(finalRecord)
+      };
+
+      if (finalRecord.warehouseCode !== currentRecord.warehouseCode) {
+        if (finalRecord.warehouseCode) {
+          const warehouse = await tx.warehouse.findUnique({
+            where: {
+              code: finalRecord.warehouseCode
+            }
+          });
+
+          if (!warehouse) {
+            throw new Error("目标仓库不存在，无法完成分仓。");
+          }
+
+          updateData.warehouse = {
+            connect: {
+              id: warehouse.id
+            }
+          };
+        } else {
+          updateData.warehouse = {
+            disconnect: true
+          };
+        }
+      }
+
+      await tx.order.update({
+        where: {
+          id: input.orderId
+        },
+        data: updateData
+      });
+
+      if (!blockedByRules && input.action === "ship-order" && finalRecord.shipment) {
+        await tx.shipment.create({
+          data: {
+            orderId: input.orderId,
+            companyCode: finalRecord.shipment.companyCode,
+            companyName: finalRecord.shipment.companyName,
+            trackingNo: finalRecord.shipment.trackingNo,
+            shippedAt: finalRecord.shipment.shippedAt
+              ? new Date(finalRecord.shipment.shippedAt.replace(" ", "T"))
+              : null
+          }
+        });
+      }
+
+      if (manualApplyResult) {
+        await tx.orderOperationLog.create({
+          data: {
+            orderId: input.orderId,
+            operatorId: input.session.userId,
+            operatorName: input.session.name,
+            type: manualApplyResult.newLog.type,
+            action: input.action,
+            title: manualApplyResult.newLog.title,
+            detail: manualApplyResult.newLog.detail,
+            reason: input.payload?.reason?.trim() || null,
+            before: buildOrderLifecycleSnapshot(currentRecord),
+            after: buildOrderLifecycleSnapshot(finalRecord)
+          }
+        });
+
+        await tx.auditLog.create({
+          data: {
+            operatorId: input.session.userId,
+            action: `ORDER_${input.action.toUpperCase().replaceAll("-", "_")}`,
+            targetType: "ORDER",
+            targetId: input.orderId,
+            detail: {
+              orderNo: currentRecord.orderNo,
+              before: buildOrderLifecycleSnapshot(currentRecord),
+              after: buildOrderLifecycleSnapshot(finalRecord),
+              reason: input.payload?.reason?.trim() || null
+            }
+          }
+        });
+      }
+
+      for (const ruleExecutionResult of ruleExecutionResults) {
+        if (ruleExecutionResult.execLogs.length > 0) {
+          await tx.ruleExecLog.createMany({
+            data: ruleExecutionResult.execLogs
+          });
+        }
+
+        for (const logEntry of ruleExecutionResult.logEntries) {
+          await tx.orderOperationLog.create({
+            data: {
+              orderId: input.orderId,
+              operatorId: input.session.userId,
+              operatorName: "规则引擎",
+              type: logEntry.type,
+              action: `RULE_${ruleExecutionResult.scene}`,
+              title: logEntry.title,
+              detail: logEntry.detail,
+              before: buildOrderLifecycleSnapshot(currentRecord),
+              after: buildOrderLifecycleSnapshot(finalRecord)
+            }
+          });
+        }
+
+        if (ruleExecutionResult.hitItems.length > 0) {
+          await tx.auditLog.create({
+            data: {
+              operatorId: input.session.userId,
+              action: `ORDER_RULE_${ruleExecutionResult.scene.replaceAll(" ", "_")}`,
+              targetType: "ORDER",
+              targetId: input.orderId,
+              detail: {
+                orderNo: currentRecord.orderNo,
+                scene: ruleExecutionResult.scene,
+                requestedAction: input.action,
+                blockedRequestedAction: ruleExecutionResult.blockedRequestedAction,
+                results: ruleExecutionResult.messageParts,
+                after: buildOrderLifecycleSnapshot(finalRecord)
+              }
+            }
+          });
+        }
+      }
+    });
+  } catch (error) {
+    if (error instanceof OrderActionValidationError) {
+      return {
+        ok: false,
+        message: error.message
       };
     }
 
-    await tx.order.update({
-      where: {
-        id: input.orderId
-      },
-      data: updateData
-    });
+    throw error;
+  }
 
-    if (input.action === "ship-order" && nextRecord.shipment) {
-      await tx.shipment.create({
-        data: {
-          orderId: input.orderId,
-          companyCode: nextRecord.shipment.companyCode,
-          companyName: nextRecord.shipment.companyName,
-          trackingNo: nextRecord.shipment.trackingNo,
-          shippedAt: nextRecord.shipment.shippedAt
-            ? new Date(nextRecord.shipment.shippedAt.replace(" ", "T"))
-            : null
-        }
-      });
-    }
+  const ruleMessages = ruleExecutionResults.flatMap((item) => item.messageParts);
 
-    await tx.orderOperationLog.create({
-      data: {
-        orderId: input.orderId,
-        operatorId: input.session.userId,
-        operatorName: input.session.name,
-        type: applyResult.newLog.type,
-        action: input.action,
-        title: applyResult.newLog.title,
-        detail: applyResult.newLog.detail,
-        reason: input.payload?.reason?.trim() || null,
-        before: {
-          status: currentRecord.status,
-          isLocked: currentRecord.isLocked,
-          isAbnormal: currentRecord.isAbnormal,
-          warehouseCode: currentRecord.warehouseCode,
-          warehouseName: currentRecord.warehouseName,
-          shipment: currentRecord.shipment
-        },
-        after: {
-          status: nextRecord.status,
-          isLocked: nextRecord.isLocked,
-          isAbnormal: nextRecord.isAbnormal,
-          warehouseCode: nextRecord.warehouseCode,
-          warehouseName: nextRecord.warehouseName,
-          shipment: nextRecord.shipment
-        }
-      }
-    });
-
-    await tx.auditLog.create({
-      data: {
-        operatorId: input.session.userId,
-        action: `ORDER_${input.action.toUpperCase().replaceAll("-", "_")}`,
-        targetType: "ORDER",
-        targetId: input.orderId,
-        detail: {
-          orderNo: currentRecord.orderNo,
-          before: {
-            status: currentRecord.status,
-            isLocked: currentRecord.isLocked,
-            isAbnormal: currentRecord.isAbnormal,
-            warehouseCode: currentRecord.warehouseCode,
-            warehouseName: currentRecord.warehouseName,
-            shipment: currentRecord.shipment
-          },
-          after: {
-            status: nextRecord.status,
-            isLocked: nextRecord.isLocked,
-            isAbnormal: nextRecord.isAbnormal,
-            warehouseCode: nextRecord.warehouseCode,
-            warehouseName: nextRecord.warehouseName,
-            shipment: nextRecord.shipment
-          },
-          reason: input.payload?.reason?.trim() || null
-        }
-      }
-    });
-  });
+  if (blockedByRules) {
+    return {
+      ok: false,
+      message:
+        ruleMessages.length > 0
+          ? `规则阻断当前操作。${ruleMessages.join("；")}`
+          : "规则阻断当前操作。"
+    };
+  }
 
   return {
     ok: true,
-    message: applyResult.message
+    message: ruleMessages.length > 0 ? `${manualMessage} ${ruleMessages.join("；")}` : manualMessage
   };
 }
 
