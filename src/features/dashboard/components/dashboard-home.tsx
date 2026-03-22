@@ -18,11 +18,10 @@ export function DashboardHome({ currentUser }: { currentUser: AuthSession }) {
     <div className="page-grid">
       <header className="app-header">
         <div>
-          <h1 className="app-header-title">项目初始化完成</h1>
+          <h1 className="app-header-title">P0 主线推进中</h1>
           <p className="app-header-subtitle">
-            当前仓库已经从纯文档状态升级为可继续开发的 Next.js 单仓骨架，目录结构围绕订单后台、
-            低代码配置和规则编排三条主线展开。当前登录账号为 {currentUser.name}，角色是
-            {currentUser.roleName}。
+            当前仓库已经完成远程数据库初始化，并开始把登录权限和订单状态流转正式切到数据库。
+            当前登录账号为 {currentUser.name}，角色是 {currentUser.roleName}。
           </p>
         </div>
         <div className="app-header-meta">Next.js App Router + PostgreSQL + Prisma</div>

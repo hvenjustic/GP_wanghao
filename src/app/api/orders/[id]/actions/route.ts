@@ -1,7 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
-import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
-import { parseAuthSession } from "@/lib/auth/cookie";
+import { getAuthSession } from "@/lib/auth/session";
 import {
   performOrderAction,
   type OrderActionCode
@@ -40,7 +39,7 @@ export async function POST(
   }
 ) {
   const { id } = await context.params;
-  const session = parseAuthSession(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+  const session = await getAuthSession();
 
   if (!session) {
     const loginUrl = new URL("/login", request.url);

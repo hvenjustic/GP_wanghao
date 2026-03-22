@@ -18,10 +18,6 @@ export function middleware(request: NextRequest) {
   const session = parseAuthSession(request.cookies.get(AUTH_COOKIE_NAME)?.value);
 
   if (pathname === "/login") {
-    if (session) {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
-
     return NextResponse.next();
   }
 

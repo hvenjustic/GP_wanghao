@@ -7,10 +7,10 @@
 - 初始化 `Next.js` 单仓项目基础配置。
 - 建立 `src/app`、`features`、`components`、`lib`、`server`、`prisma` 等核心目录。
 - 提供项目总览页、登录页、订单列表页、订单详情页、低代码配置页、规则编排页等基础入口。
-- 实现基于 Cookie 的演示登录权限与页面访问控制。
-- 实现订单列表筛选、订单详情展示和演示状态流转接口。
+- 实现基于数据库用户、角色、权限的登录会话与页面访问控制。
+- 实现订单列表筛选、订单详情展示和核心状态流转落库。
 - 实现订单数据源切换能力，默认使用内存演示数据，可切换到 Prisma 数据库。
-- 提供 `Prisma seed` 脚本，用于初始化示例订单、仓库、客户和演示账号数据。
+- 提供 `Prisma seed` 脚本，用于初始化示例订单、仓库、客户、账号、角色和权限数据。
 - 提供 `Prisma schema`、健康检查接口、Prisma 基础封装和 Zod schema 示例。
 - 保留并沿用现有需求文档与技术路线文档。
 
@@ -33,6 +33,7 @@ src/
 
 ```bash
 cp .env.example .env.local
+cp .env.example .env
 ```
 
 2. 安装依赖：
@@ -53,21 +54,22 @@ pnpm dev
 http://localhost:3000/api/health
 ```
 
-## 切换到 Prisma 数据源
+## 当前数据库配置
 
-默认使用内存演示数据。如果你已经准备好本地 PostgreSQL，可以这样切换：
+当前环境模板默认使用 Prisma 数据源。如果你已经配置好 PostgreSQL，只需要复制：
 
 ```bash
 cp .env.example .env.local
+cp .env.example .env
 ```
 
-把 `.env.local` 里的 `ORDER_DATA_SOURCE` 改成：
+如果你只想临时回退到内存演示数据，可以把 `.env.local` 和 `.env` 里的配置改成：
 
 ```text
-ORDER_DATA_SOURCE="prisma"
+ORDER_DATA_SOURCE="memory"
 ```
 
-然后执行：
+如果你要同步数据库结构和种子数据，执行：
 
 ```bash
 pnpm db:push
@@ -99,11 +101,12 @@ pnpm db:seed
 
 - [需求文档](docs/requirements.md)
 - [技术路线文档](docs/tech-roadmap.md)
+- [开发任务清单](docs/dev-task-list.md)
 - [进度记录](docs/progress.md)
 
 ## 下一步建议
 
-- 把 `Prisma schema` 拆到首批迁移并接上真实数据库。
-- 在 `src/server/services` 中补齐订单、配置、规则三类服务。
-- 在 `src/app/orders`、`src/app/meta`、`src/app/rules` 下继续实现真实列表、详情和配置页面。
-- 接入真实用户表、角色表和权限模型，替换当前演示登录方案。
+- 补用户、角色、权限管理页面和密码维护能力。
+- 在订单模块补齐批量动作、异常标记和更完整的业务约束。
+- 在 `src/app/meta`、`src/app/rules` 下继续实现真实配置和规则页面。
+- 把规则执行日志和审计日志查询页面补出来。

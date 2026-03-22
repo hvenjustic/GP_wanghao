@@ -418,17 +418,17 @@ function getActionAvailabilityFromPermissions(
   const canAssignWarehouse = permissions.includes("orders:assign-warehouse");
   const canShip = permissions.includes("orders:ship");
   const isReviewStage = ["PENDING_REVIEW", "MANUAL_REVIEW"].includes(order.status);
+  const isWarehouseStage = ["PENDING_WAREHOUSE", "PENDING_SHIPMENT"].includes(order.status);
 
   return {
     canApproveReview: canReview && isReviewStage && !order.isLocked,
     canRejectReview: canReview && isReviewStage && !order.isLocked,
-    canAssignWarehouse:
-      canAssignWarehouse && order.status === "PENDING_WAREHOUSE" && !order.isLocked,
+    canAssignWarehouse: canAssignWarehouse && isWarehouseStage && !order.isLocked,
     canShip: canShip && order.status === "PENDING_SHIPMENT" && !order.isLocked,
     canLock:
       canReview &&
       !order.isLocked &&
-      !["SHIPPED", "CANCELED"].includes(order.status),
+      !["SHIPPED", "CANCELED", "COMPLETED"].includes(order.status),
     canUnlock: canReview && order.isLocked
   };
 }
@@ -460,13 +460,20 @@ function applyOrderActionToRecord(
         };
       }
 
+      if (!payload?.reason?.trim()) {
+        return {
+          ok: false,
+          message: "锁单必须填写原因。"
+        };
+      }
+
       nextRecord.isLocked = true;
       appendTag(nextRecord, "人工锁单");
       const newLog = createManualLogEntry(
         nextRecord.id,
         session.name,
         "人工锁单",
-        payload?.reason?.trim() || "运营手工锁定订单，等待进一步处理。"
+        payload.reason.trim()
       );
       nextRecord.logs.unshift(newLog);
 
@@ -486,13 +493,20 @@ function applyOrderActionToRecord(
         };
       }
 
+      if (!payload?.reason?.trim()) {
+        return {
+          ok: false,
+          message: "解除锁单必须填写原因。"
+        };
+      }
+
       nextRecord.isLocked = false;
       removeTag(nextRecord, "人工锁单");
       const newLog = createManualLogEntry(
         nextRecord.id,
         session.name,
         "解除锁单",
-        payload?.reason?.trim() || "运营解除锁单，恢复后续处理。"
+        payload.reason.trim()
       );
       nextRecord.logs.unshift(newLog);
 
@@ -541,6 +555,13 @@ function applyOrderActionToRecord(
         };
       }
 
+      if (!payload?.reason?.trim()) {
+        return {
+          ok: false,
+          message: "审核驳回必须填写原因。"
+        };
+      }
+
       nextRecord.status = "CANCELED";
       nextRecord.isLocked = false;
       appendTag(nextRecord, "审核驳回");
@@ -548,7 +569,7 @@ function applyOrderActionToRecord(
         nextRecord.id,
         session.name,
         "审核驳回",
-        payload?.reason?.trim() || "人工审核后决定取消订单。"
+        payload.reason.trim()
       );
       nextRecord.logs.unshift(newLog);
 
@@ -577,6 +598,13 @@ function applyOrderActionToRecord(
         };
       }
 
+      if (!payload?.reason?.trim()) {
+        return {
+          ok: false,
+          message: "手工分仓必须填写原因。"
+        };
+      }
+
       nextRecord.status = "PENDING_SHIPMENT";
       nextRecord.warehouseCode = warehouse.code;
       nextRecord.warehouseName = warehouse.name;
@@ -584,7 +612,7 @@ function applyOrderActionToRecord(
         nextRecord.id,
         session.name,
         "手工分仓",
-        payload?.reason?.trim() || `订单手工分配到 ${warehouse.name}。`
+        payload.reason.trim()
       );
       nextRecord.logs.unshift(newLog);
 
@@ -813,6 +841,24 @@ async function getOrderDetailFromPrisma(orderId: string) {
   return order ? mapPrismaOrderToRecord(order) : null;
 }
 
+async function getWarehouseOptionsFromPrisma() {
+  const warehouses = await prisma.warehouse.findMany({
+    where: {
+      status: "ACTIVE"
+    },
+    select: {
+      code: true,
+      name: true
+    },
+    orderBy: [{ priority: "desc" }, { createdAt: "asc" }]
+  });
+
+  return warehouses.map((item) => ({
+    code: item.code,
+    name: item.name
+  }));
+}
+
 async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
   const currentRecord = await getOrderDetailFromPrisma(input.orderId);
 
@@ -912,6 +958,33 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
         }
       }
     });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: input.session.userId,
+        action: `ORDER_${input.action.toUpperCase().replaceAll("-", "_")}`,
+        targetType: "ORDER",
+        targetId: input.orderId,
+        detail: {
+          orderNo: currentRecord.orderNo,
+          before: {
+            status: currentRecord.status,
+            isLocked: currentRecord.isLocked,
+            warehouseCode: currentRecord.warehouseCode,
+            warehouseName: currentRecord.warehouseName,
+            shipment: currentRecord.shipment
+          },
+          after: {
+            status: nextRecord.status,
+            isLocked: nextRecord.isLocked,
+            warehouseCode: nextRecord.warehouseCode,
+            warehouseName: nextRecord.warehouseName,
+            shipment: nextRecord.shipment
+          },
+          reason: input.payload?.reason?.trim() || null
+        }
+      }
+    });
   });
 
   return {
@@ -966,11 +1039,15 @@ export async function getOrderDetail(orderId: string) {
   );
 }
 
-export function getWarehouseOptions() {
-  return mockWarehouseCatalog.map((item) => ({
-    code: item.code,
-    name: item.name
-  }));
+export async function getWarehouseOptions() {
+  return safeUsePrisma(
+    () => getWarehouseOptionsFromPrisma(),
+    async () =>
+      mockWarehouseCatalog.map((item) => ({
+        code: item.code,
+        name: item.name
+      }))
+  );
 }
 
 export function getOrderActionAvailability(

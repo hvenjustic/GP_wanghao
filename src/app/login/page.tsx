@@ -14,7 +14,15 @@ function getSingleValue(value: string | string[] | undefined) {
 
 function getLoginErrorMessage(errorCode: string) {
   if (errorCode === "invalid_credentials") {
-    return "账号或密码不正确，请使用下方演示账号登录。";
+    return "账号或密码不正确，请检查输入或使用下方初始化账号登录。";
+  }
+
+  if (errorCode === "inactive_user") {
+    return "当前账号已被禁用，请联系管理员处理。";
+  }
+
+  if (errorCode === "access_denied") {
+    return "当前账号未分配有效角色或权限，暂时无法登录。";
   }
 
   return "";
@@ -42,8 +50,8 @@ export default async function LoginPage({
         <span className="eyebrow">登录权限</span>
         <h1 className="app-header-title">开始接通登录和权限控制</h1>
         <p className="app-header-subtitle">
-          当前阶段先采用演示账号 + Cookie 会话方式打通最小闭环，后续再替换为
-          基于数据库的真实用户、角色和权限体系。不同角色登录后，能看到的导航和页面权限不同。
+          当前登录已经接入数据库中的用户、角色和权限关系。不同角色登录后，能看到的导航、
+          页面和订单操作都不相同。
         </p>
       </section>
 
@@ -63,7 +71,7 @@ export default async function LoginPage({
                 className="text-input"
                 type="email"
                 name="email"
-                placeholder="请输入演示邮箱"
+                placeholder="请输入初始化账号邮箱"
                 defaultValue="ops@gp.local"
                 required
               />
@@ -90,8 +98,8 @@ export default async function LoginPage({
         </section>
 
         <section className="auth-panel">
-          <h2>演示账号</h2>
-          <p className="muted">这些账号已经内置了不同的角色权限，可以直接用来验证导航和页面访问控制。</p>
+          <h2>初始化账号</h2>
+          <p className="muted">这些账号已写入数据库，可以直接用来验证真实权限、导航和页面访问控制。</p>
 
           <ul className="demo-account-list">
             {demoUsers.map((user) => (

@@ -57,7 +57,7 @@ export default async function OrderDetailPage({
   const error = getSingleValue(pageParams.error);
   const state = orderStateMap[order.status];
   const availability = getOrderActionAvailability(order, currentUser.permissions);
-  const warehouses = getWarehouseOptions();
+  const warehouses = await getWarehouseOptions();
 
   return (
     <div className="page-grid">
@@ -229,7 +229,7 @@ export default async function OrderDetailPage({
       <SectionCard
         eyebrow="操作面板"
         title="状态流转与人工处理"
-        description="动作会实时修改当前进程中的演示数据，并写入订单处理日志。"
+        description="动作会直接写入数据库中的订单、物流、操作日志和审计日志。"
       >
         <div className="operation-grid">
           {availability.canApproveReview ? (
@@ -251,7 +251,12 @@ export default async function OrderDetailPage({
               <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
               <span className="bullet-title">审核驳回</span>
               <p className="muted">驳回后订单会进入已取消，并写入人工处理日志。</p>
-              <input className="text-input" name="reason" placeholder="请填写驳回原因" />
+              <input
+                className="text-input"
+                name="reason"
+                placeholder="请填写驳回原因"
+                required
+              />
               <button type="submit" className="button-danger">
                 执行审核驳回
               </button>
@@ -274,7 +279,12 @@ export default async function OrderDetailPage({
                   </option>
                 ))}
               </select>
-              <input className="text-input" name="reason" placeholder="可选：填写分仓说明" />
+              <input
+                className="text-input"
+                name="reason"
+                placeholder="请填写手工分仓原因"
+                required
+              />
               <button type="submit" className="button-primary">
                 执行分仓
               </button>
@@ -302,7 +312,12 @@ export default async function OrderDetailPage({
               <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
               <span className="bullet-title">锁单</span>
               <p className="muted">锁单后将阻断审核通过、分仓和发货等后续动作。</p>
-              <input className="text-input" name="reason" placeholder="可选：填写锁单原因" />
+              <input
+                className="text-input"
+                name="reason"
+                placeholder="请填写锁单原因"
+                required
+              />
               <button type="submit" className="button-secondary">
                 执行锁单
               </button>
@@ -315,7 +330,12 @@ export default async function OrderDetailPage({
               <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
               <span className="bullet-title">解除锁单</span>
               <p className="muted">解除锁单后，订单可恢复审核、分仓或发货操作。</p>
-              <input className="text-input" name="reason" placeholder="可选：填写解锁说明" />
+              <input
+                className="text-input"
+                name="reason"
+                placeholder="请填写解锁说明"
+                required
+              />
               <button type="submit" className="button-secondary">
                 执行解锁
               </button>
@@ -389,7 +409,7 @@ export default async function OrderDetailPage({
         <SectionCard
           eyebrow="处理日志"
           title="人工 / 系统 / 规则日志"
-          description="每次状态流转都会落到这里，后续可继续升级为审计日志和规则执行日志。"
+          description="每次状态流转都会落到数据库日志中，后续可继续升级为完整审计中心。"
         >
           <ul className="timeline-list">
             {order.logs.map((item) => (

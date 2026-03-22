@@ -1,32 +1,100 @@
 import { PrismaClient, Prisma } from "@prisma/client";
+import { randomBytes, scryptSync } from "node:crypto";
 
 const prisma = new PrismaClient();
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex");
+  const derivedKey = scryptSync(password, salt, 64).toString("hex");
+
+  return `${salt}:${derivedKey}`;
+}
+
+const permissionDefinitions = [
+  { id: "perm-dashboard-view", code: "dashboard:view", name: "查看项目总览", scope: "dashboard" },
+  { id: "perm-orders-view", code: "orders:view", name: "查看订单", scope: "orders" },
+  { id: "perm-orders-review", code: "orders:review", name: "审核订单", scope: "orders" },
+  {
+    id: "perm-orders-assign-warehouse",
+    code: "orders:assign-warehouse",
+    name: "分配仓库",
+    scope: "orders"
+  },
+  { id: "perm-orders-ship", code: "orders:ship", name: "订单发货", scope: "orders" },
+  { id: "perm-meta-view", code: "meta:view", name: "查看低代码配置", scope: "meta" },
+  { id: "perm-meta-manage", code: "meta:manage", name: "管理低代码配置", scope: "meta" },
+  { id: "perm-rules-view", code: "rules:view", name: "查看规则编排", scope: "rules" },
+  { id: "perm-rules-manage", code: "rules:manage", name: "管理规则编排", scope: "rules" }
+];
+
+const roleDefinitions = [
+  { id: "role-admin", code: "ADMIN", name: "管理员", status: "ACTIVE" },
+  { id: "role-operator", code: "OPERATOR", name: "运营人员", status: "ACTIVE" },
+  { id: "role-auditor", code: "AUDITOR", name: "审核人员", status: "ACTIVE" },
+  { id: "role-configurator", code: "CONFIGURATOR", name: "配置人员", status: "ACTIVE" }
+];
+
+const rolePermissionMappings = [
+  ["role-admin", "perm-dashboard-view"],
+  ["role-admin", "perm-orders-view"],
+  ["role-admin", "perm-orders-review"],
+  ["role-admin", "perm-orders-assign-warehouse"],
+  ["role-admin", "perm-orders-ship"],
+  ["role-admin", "perm-meta-view"],
+  ["role-admin", "perm-meta-manage"],
+  ["role-admin", "perm-rules-view"],
+  ["role-admin", "perm-rules-manage"],
+  ["role-operator", "perm-dashboard-view"],
+  ["role-operator", "perm-orders-view"],
+  ["role-operator", "perm-orders-review"],
+  ["role-operator", "perm-orders-assign-warehouse"],
+  ["role-operator", "perm-orders-ship"],
+  ["role-auditor", "perm-dashboard-view"],
+  ["role-auditor", "perm-orders-view"],
+  ["role-auditor", "perm-orders-review"],
+  ["role-configurator", "perm-dashboard-view"],
+  ["role-configurator", "perm-meta-view"],
+  ["role-configurator", "perm-meta-manage"],
+  ["role-configurator", "perm-rules-view"],
+  ["role-configurator", "perm-rules-manage"]
+];
 
 const demoUsers = [
   {
     id: "demo-admin",
     email: "admin@gp.local",
     name: "系统管理员",
+    passwordHash: hashPassword("Admin123!"),
     status: "ACTIVE"
   },
   {
     id: "demo-ops",
     email: "ops@gp.local",
     name: "订单运营",
+    passwordHash: hashPassword("Ops123!"),
     status: "ACTIVE"
   },
   {
     id: "demo-auditor",
     email: "audit@gp.local",
     name: "审核专员",
+    passwordHash: hashPassword("Audit123!"),
     status: "ACTIVE"
   },
   {
     id: "demo-config",
     email: "config@gp.local",
     name: "配置实施",
+    passwordHash: hashPassword("Config123!"),
     status: "ACTIVE"
   }
+];
+
+const userRoleMappings = [
+  ["demo-admin", "role-admin"],
+  ["demo-ops", "role-operator"],
+  ["demo-auditor", "role-auditor"],
+  ["demo-config", "role-configurator"]
 ];
 
 const warehouses = [
@@ -325,17 +393,36 @@ const orders = [
 ];
 
 async function main() {
+  await prisma.auditLog.deleteMany();
+  await prisma.rolePermission.deleteMany();
+  await prisma.userRole.deleteMany();
   await prisma.orderOperationLog.deleteMany();
   await prisma.shipment.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.warehouse.deleteMany();
+  await prisma.permission.deleteMany();
+  await prisma.role.deleteMany();
   await prisma.user.deleteMany();
 
+  await prisma.permission.createMany({ data: permissionDefinitions });
+  await prisma.role.createMany({ data: roleDefinitions });
   await prisma.user.createMany({ data: demoUsers });
   await prisma.warehouse.createMany({ data: warehouses });
   await prisma.customer.createMany({ data: customers });
+  await prisma.rolePermission.createMany({
+    data: rolePermissionMappings.map(([roleId, permissionId]) => ({
+      roleId,
+      permissionId
+    }))
+  });
+  await prisma.userRole.createMany({
+    data: userRoleMappings.map(([userId, roleId]) => ({
+      userId,
+      roleId
+    }))
+  });
 
   for (const order of orders) {
     await prisma.order.create({
