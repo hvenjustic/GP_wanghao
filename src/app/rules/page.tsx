@@ -1,10 +1,13 @@
+import { requirePermission } from "@/lib/auth/guards";
 import { SectionCard } from "@/components/ui/section-card";
 import {
   ruleNodeTypes,
   ruleScenes
 } from "@/features/rules/config/rule-scenes";
 
-export default function RulesPage() {
+export default async function RulesPage() {
+  await requirePermission("rules:view", "/rules");
+
   return (
     <div className="page-grid">
       <header className="app-header">

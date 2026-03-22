@@ -1,7 +1,10 @@
+import { requirePermission } from "@/lib/auth/guards";
 import { SectionCard } from "@/components/ui/section-card";
 import { metaCapabilities } from "@/features/meta/config/meta-capabilities";
 
-export default function MetaPage() {
+export default async function MetaPage() {
+  await requirePermission("meta:view", "/meta");
+
   return (
     <div className="page-grid">
       <header className="app-header">

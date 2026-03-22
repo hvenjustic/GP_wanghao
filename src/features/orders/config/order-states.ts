@@ -36,3 +36,9 @@ export const orderStates = [
     description: "审核驳回或运营取消后结束处理。"
   }
 ] as const;
+
+export type OrderStatusCode = (typeof orderStates)[number]["code"];
+
+export const orderStateMap = Object.fromEntries(
+  orderStates.map((item) => [item.code, item])
+) as Record<OrderStatusCode, (typeof orderStates)[number]>;

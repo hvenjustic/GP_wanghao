@@ -3,10 +3,24 @@
 import type { PropsWithChildren } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { hasPermission, type AuthSession } from "@/lib/auth/types";
 import { navigationItems } from "@/lib/config/navigation";
 
-export function AppShell({ children }: PropsWithChildren) {
+type AppShellProps = PropsWithChildren<{
+  currentUser: AuthSession | null;
+}>;
+
+export function AppShell({ children, currentUser }: AppShellProps) {
   const pathname = usePathname();
+  const isLoginPage = pathname.startsWith("/login");
+
+  if (isLoginPage) {
+    return <main className="auth-page-shell">{children}</main>;
+  }
+
+  const visibleNavigationItems = navigationItems.filter((item) =>
+    hasPermission(currentUser, item.permission)
+  );
 
   return (
     <div className="app-shell">
@@ -20,7 +34,7 @@ export function AppShell({ children }: PropsWithChildren) {
         </div>
 
         <nav className="app-nav" aria-label="主导航">
-          {navigationItems.map((item) => {
+          {visibleNavigationItems.map((item) => {
             const isActive =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
 
@@ -36,6 +50,26 @@ export function AppShell({ children }: PropsWithChildren) {
             );
           })}
         </nav>
+
+        <div className="app-sidebar-footer">
+          {currentUser ? (
+            <div className="sidebar-user-card">
+              <div className="sidebar-user-name">{currentUser.name}</div>
+              <div className="sidebar-user-meta">
+                {currentUser.roleName} · {currentUser.email}
+              </div>
+              <form action="/api/auth/logout" method="post">
+                <button type="submit" className="button-secondary button-block">
+                  退出登录
+                </button>
+              </form>
+            </div>
+          ) : (
+            <Link href="/login" className="button-secondary button-block">
+              前往登录
+            </Link>
+          )}
+        </div>
       </aside>
 
       <main className="app-main">{children}</main>

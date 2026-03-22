@@ -1,22 +1,35 @@
-export const navigationItems = [
+import type { PermissionCode } from "@/lib/auth/types";
+
+type NavigationItem = {
+  href: string;
+  label: string;
+  description: string;
+  permission: PermissionCode;
+};
+
+export const navigationItems: NavigationItem[] = [
   {
     href: "/",
     label: "项目总览",
-    description: "查看初始化状态、模块边界和下一步建议。"
+    description: "查看初始化状态、模块边界和下一步建议。",
+    permission: "dashboard:view"
   },
   {
     href: "/orders",
     label: "订单后台",
-    description: "聚焦订单状态模型、操作约束和异常处理。"
+    description: "聚焦订单状态模型、操作约束和异常处理。",
+    permission: "orders:view"
   },
   {
     href: "/meta",
     label: "低代码配置",
-    description: "说明字段、页面、动作和发布治理能力。"
+    description: "说明字段、页面、动作和发布治理能力。",
+    permission: "meta:view"
   },
   {
     href: "/rules",
     label: "规则编排",
-    description: "整理触发场景、节点类型和版本管理。"
+    description: "整理触发场景、节点类型和版本管理。",
+    permission: "rules:view"
   }
-] as const;
+];

@@ -6,7 +6,9 @@
 
 - 初始化 `Next.js` 单仓项目基础配置。
 - 建立 `src/app`、`features`、`components`、`lib`、`server`、`prisma` 等核心目录。
-- 提供项目总览页、订单后台页、低代码配置页、规则编排页四个基础入口。
+- 提供项目总览页、登录页、订单列表页、订单详情页、低代码配置页、规则编排页等基础入口。
+- 实现基于 Cookie 的演示登录权限与页面访问控制。
+- 实现订单列表筛选、订单详情展示和演示状态流转接口。
 - 提供 `Prisma schema`、健康检查接口、Supabase/Prisma 基础封装和 Zod schema 示例。
 - 保留并沿用现有需求文档与技术路线文档。
 
@@ -49,6 +51,15 @@ pnpm dev
 http://localhost:3000/api/health
 ```
 
+## 演示账号
+
+```text
+admin@gp.local / Admin123!
+ops@gp.local / Ops123!
+audit@gp.local / Audit123!
+config@gp.local / Config123!
+```
+
 ## 常用命令
 
 ```bash
@@ -64,6 +75,7 @@ pnpm db:push
 
 - [需求文档](docs/requirements.md)
 - [技术路线文档](docs/tech-roadmap.md)
+- [进度记录](docs/progress.md)
 
 ## 下一步建议
 

@@ -51,6 +51,8 @@ a {
   position: sticky;
   top: 0;
   height: 100vh;
+  display: flex;
+  flex-direction: column;
   padding: 24px 18px;
   background: rgba(13, 32, 54, 0.94);
   color: #eff6ff;
@@ -91,6 +93,11 @@ a {
 .app-nav {
   display: grid;
   gap: 10px;
+}
+
+.app-sidebar-footer {
+  margin-top: auto;
+  padding-top: 20px;
 }
 
 .app-nav-item {
@@ -160,6 +167,34 @@ a {
   box-shadow: var(--shadow);
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.page-back-link {
+  display: inline-flex;
+  margin-bottom: 12px;
+  color: var(--brand);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.sidebar-user-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-user-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.sidebar-user-meta {
+  color: rgba(239, 246, 255, 0.74);
+  font-size: 0.84rem;
+  line-height: 1.55;
 }
 
 .page-grid {
@@ -311,6 +346,15 @@ a {
   color: var(--muted);
 }
 
+.table-cell-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.table-link {
+  color: var(--brand);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -382,6 +426,264 @@ a {
   line-height: 1.7;
 }
 
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.form-field,
+.auth-field {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.text-input,
+.select-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--foreground);
+  font: inherit;
+}
+
+.text-input:focus,
+.select-input:focus {
+  outline: none;
+  border-color: rgba(23, 104, 172, 0.56);
+  box-shadow: 0 0 0 4px rgba(23, 104, 172, 0.12);
+}
+
+.checkbox-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 0.95rem;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.button-primary,
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.button-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(194, 65, 12, 0.14);
+  background: rgba(194, 65, 12, 0.1);
+  color: var(--danger);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.button-primary {
+  background: linear-gradient(135deg, #1768ac 0%, #0f4c81 100%);
+  color: #f8fbff;
+}
+
+.button-primary:hover {
+  filter: brightness(1.03);
+}
+
+.button-secondary {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--foreground);
+  border-color: rgba(23, 104, 172, 0.12);
+}
+
+.button-secondary:hover {
+  background: #ffffff;
+}
+
+.button-block {
+  width: 100%;
+}
+
+.detail-hero {
+  display: grid;
+  gap: 16px;
+}
+
+.detail-hero-main,
+.detail-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.detail-status-row {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.kv-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(23, 104, 172, 0.04);
+  border: 1px solid rgba(23, 104, 172, 0.08);
+}
+
+.kv-grid strong {
+  font-size: 0.9rem;
+}
+
+.kv-grid-full {
+  grid-column: 1 / -1;
+}
+
+.operation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.operation-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(23, 104, 172, 0.04);
+  border: 1px solid rgba(23, 104, 172, 0.1);
+}
+
+.alert-banner {
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-weight: 600;
+}
+
+.alert-banner-success {
+  background: rgba(31, 143, 95, 0.12);
+  color: var(--success);
+  border: 1px solid rgba(31, 143, 95, 0.16);
+}
+
+.alert-banner-error {
+  background: rgba(194, 65, 12, 0.1);
+  color: var(--danger);
+  border: 1px solid rgba(194, 65, 12, 0.16);
+}
+
+.empty-state {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  margin-top: 16px;
+  border-radius: 18px;
+  background: rgba(23, 104, 172, 0.04);
+  border: 1px dashed rgba(23, 104, 172, 0.2);
+}
+
+.auth-page-shell {
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.auth-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+}
+
+.auth-panel {
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(23, 104, 172, 0.08);
+  box-shadow: var(--shadow);
+}
+
+.auth-panel-highlight {
+  background:
+    linear-gradient(135deg, rgba(23, 104, 172, 0.98), rgba(11, 52, 90, 0.95)),
+    #0f172a;
+  color: #f8fbff;
+}
+
+.auth-panel-highlight .app-header-subtitle,
+.auth-panel-highlight .muted {
+  color: rgba(248, 251, 255, 0.82);
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.auth-error {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(194, 65, 12, 0.1);
+  color: var(--danger);
+  border: 1px solid rgba(194, 65, 12, 0.14);
+}
+
+.demo-account-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demo-account-list li {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(23, 104, 172, 0.04);
+  border: 1px solid rgba(23, 104, 172, 0.08);
+}
+
 @media (max-width: 1180px) {
   .stats-grid,
   .feature-grid,
@@ -408,6 +710,12 @@ a {
     flex-direction: column;
   }
 
+  .detail-hero-main,
+  .detail-status-row,
+  .kv-grid,
+  .operation-grid,
+  .filter-grid,
+  .auth-grid,
   .two-col-grid,
   .stats-grid,
   .feature-grid,

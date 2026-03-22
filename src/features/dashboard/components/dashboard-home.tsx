@@ -1,3 +1,4 @@
+import type { AuthSession } from "@/lib/auth/types";
 import Link from "next/link";
 import { MetricCard } from "@/components/ui/metric-card";
 import { SectionCard } from "@/components/ui/section-card";
@@ -9,7 +10,7 @@ import {
   getDashboardMetrics
 } from "@/server/services/dashboard-service";
 
-export function DashboardHome() {
+export function DashboardHome({ currentUser }: { currentUser: AuthSession }) {
   const metrics = getDashboardMetrics();
   const checklist = getBootstrapChecklist();
 
@@ -20,7 +21,8 @@ export function DashboardHome() {
           <h1 className="app-header-title">项目初始化完成</h1>
           <p className="app-header-subtitle">
             当前仓库已经从纯文档状态升级为可继续开发的 Next.js 单仓骨架，目录结构围绕订单后台、
-            低代码配置和规则编排三条主线展开。
+            低代码配置和规则编排三条主线展开。当前登录账号为 {currentUser.name}，角色是
+            {currentUser.roleName}。
           </p>
         </div>
         <div className="app-header-meta">Next.js App Router + Prisma + Supabase</div>
