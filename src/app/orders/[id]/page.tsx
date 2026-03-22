@@ -306,6 +306,42 @@ export default async function OrderDetailPage({
             </form>
           ) : null}
 
+          {availability.canMarkAbnormal ? (
+            <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
+              <input type="hidden" name="action" value="mark-abnormal" />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <span className="bullet-title">标记异常</span>
+              <p className="muted">用于标记需要重点处理或人工介入的订单，不改变主流程状态。</p>
+              <input
+                className="text-input"
+                name="reason"
+                placeholder="请填写异常原因"
+                required
+              />
+              <button type="submit" className="button-danger">
+                标记异常
+              </button>
+            </form>
+          ) : null}
+
+          {availability.canClearAbnormal ? (
+            <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
+              <input type="hidden" name="action" value="clear-abnormal" />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <span className="bullet-title">解除异常</span>
+              <p className="muted">异常处理完成后可解除标记，订单会继续按当前主状态流转。</p>
+              <input
+                className="text-input"
+                name="reason"
+                placeholder="请填写解除异常说明"
+                required
+              />
+              <button type="submit" className="button-secondary">
+                解除异常
+              </button>
+            </form>
+          ) : null}
+
           {availability.canLock ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="lock-order" />

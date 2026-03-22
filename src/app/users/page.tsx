@@ -1,5 +1,6 @@
 import { MetricCard } from "@/components/ui/metric-card";
 import { SectionCard } from "@/components/ui/section-card";
+import { permissionCodes } from "@/lib/auth/types";
 import { requirePermission } from "@/lib/auth/guards";
 import { getUserManagementOverview } from "@/server/services/user-service";
 
@@ -79,6 +80,7 @@ export default async function UsersPage({
               <th>更新时间</th>
               <th>状态管理</th>
               <th>角色管理</th>
+              <th>密码维护</th>
             </tr>
           </thead>
           <tbody>
@@ -147,6 +149,22 @@ export default async function UsersPage({
                     </button>
                   </form>
                 </td>
+                <td>
+                  <form className="table-form" action={`/api/users/${user.id}/actions`} method="post">
+                    <input type="hidden" name="action" value="reset-password" />
+                    <input
+                      className="text-input"
+                      name="newPassword"
+                      type="password"
+                      minLength={8}
+                      placeholder="输入新密码"
+                      required
+                    />
+                    <button type="submit" className="button-secondary">
+                      重置密码
+                    </button>
+                  </form>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -156,51 +174,50 @@ export default async function UsersPage({
       <SectionCard
         eyebrow="角色矩阵"
         title="角色与权限边界"
-        description="当前角色仍保持单角色模型，后续如需多角色叠加再扩展管理界面。"
+        description="当前角色仍保持单角色模型，权限编辑会直接影响对应角色下用户的会话刷新结果。"
       >
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>角色</th>
-              <th>状态</th>
-              <th>用户数</th>
-              <th>权限码</th>
-            </tr>
-          </thead>
-          <tbody>
-            {overview.roles.map((role) => (
-              <tr key={role.id}>
-                <td>
-                  <div className="table-cell-stack">
-                    <strong>{role.name}</strong>
-                    <span className="muted">{role.code}</span>
-                  </div>
-                </td>
-                <td>
-                  <span
-                    className={
-                      role.status === "ACTIVE"
-                        ? "status-pill status-pill-green"
-                        : "status-pill status-pill-slate"
-                    }
-                  >
-                    {role.status}
-                  </span>
-                </td>
-                <td>{role.userCount}</td>
-                <td>
-                  <div className="chip-row">
-                    {role.permissionCodes.map((permission) => (
-                      <span key={permission} className="chip">
-                        {permission}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="three-col-grid">
+          {overview.roles.map((role) => (
+            <form
+              key={role.id}
+              className="surface-card role-card"
+              action={`/api/roles/${role.code}/permissions`}
+              method="post"
+            >
+              <div className="table-cell-stack">
+                <strong>{role.name}</strong>
+                <span className="muted">
+                  {role.code} · {role.userCount} 人
+                </span>
+              </div>
+              <span
+                className={
+                  role.status === "ACTIVE"
+                    ? "status-pill status-pill-green"
+                    : "status-pill status-pill-slate"
+                }
+              >
+                {role.status}
+              </span>
+              <div className="checkbox-grid">
+                {permissionCodes.map((permission) => (
+                  <label key={permission} className="checkbox-card">
+                    <input
+                      type="checkbox"
+                      name="permissionCodes"
+                      value={permission}
+                      defaultChecked={role.permissionCodes.includes(permission)}
+                    />
+                    <span>{permission}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="submit" className="button-secondary">
+                保存权限
+              </button>
+            </form>
+          ))}
+        </div>
       </SectionCard>
     </div>
   );

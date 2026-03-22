@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { hashPassword } from "@/lib/auth/password";
 import {
   hasPermission,
   isRoleCode,
@@ -11,12 +12,19 @@ import { createAuditLog } from "@/server/services/audit-service";
 
 type UserActionInput = {
   targetUserId: string;
-  action: "set-status" | "set-role";
+  action: "set-status" | "set-role" | "reset-password";
   session: AuthSession;
   payload: {
     status?: "ACTIVE" | "DISABLED";
     roleCode?: RoleCode;
+    newPassword?: string;
   };
+};
+
+type RolePermissionActionInput = {
+  roleCode: RoleCode;
+  permissionCodes: PermissionCode[];
+  session: AuthSession;
 };
 
 function formatDateTime(value: Date) {
@@ -106,6 +114,7 @@ export async function getUserManagementOverview() {
   return {
     users: userItems,
     roles: roleItems,
+    availablePermissions: [...permissionCodes],
     summary: {
       totalUsers: userItems.length,
       activeUsers: userItems.filter((item) => item.status === "ACTIVE").length,
@@ -187,6 +196,41 @@ export async function performUserManagementAction(input: UserActionInput) {
     };
   }
 
+  if (input.action === "reset-password") {
+    const newPassword = input.payload.newPassword?.trim() ?? "";
+
+    if (newPassword.length < 8) {
+      return {
+        ok: false,
+        message: "新密码长度至少需要 8 位。"
+      };
+    }
+
+    await prisma.user.update({
+      where: {
+        id: targetUser.id
+      },
+      data: {
+        passwordHash: hashPassword(newPassword)
+      }
+    });
+
+    await createAuditLog({
+      operatorId: input.session.userId,
+      action: "USER_PASSWORD_RESET",
+      targetType: "USER",
+      targetId: targetUser.id,
+      detail: {
+        email: targetUser.email
+      }
+    });
+
+    return {
+      ok: true,
+      message: `用户 ${targetUser.name} 的密码已重置。`
+    };
+  }
+
   const roleCode = input.payload.roleCode;
 
   if (!roleCode || !isRoleCode(roleCode)) {
@@ -248,5 +292,84 @@ export async function performUserManagementAction(input: UserActionInput) {
   return {
     ok: true,
     message: `用户 ${targetUser.name} 已调整为 ${role.name}。`
+  };
+}
+
+export async function updateRolePermissions(input: RolePermissionActionInput) {
+  if (!hasPermission(input.session, "users:manage")) {
+    return {
+      ok: false,
+      message: "当前账号没有管理角色权限的权限。"
+    };
+  }
+
+  if (input.roleCode === input.session.roleCode) {
+    return {
+      ok: false,
+      message: "不能修改当前登录角色的权限，避免当前会话失效。"
+    };
+  }
+
+  const role = await prisma.role.findUnique({
+    where: {
+      code: input.roleCode
+    },
+    include: {
+      permissions: {
+        include: {
+          permission: true
+        }
+      }
+    }
+  });
+
+  if (!role || role.status !== "ACTIVE") {
+    return {
+      ok: false,
+      message: "目标角色不存在或未启用。"
+    };
+  }
+
+  const nextPermissionCodes = Array.from(new Set(input.permissionCodes));
+  const permissions = await prisma.permission.findMany({
+    where: {
+      code: {
+        in: nextPermissionCodes
+      }
+    }
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.rolePermission.deleteMany({
+      where: {
+        roleId: role.id
+      }
+    });
+
+    if (permissions.length > 0) {
+      await tx.rolePermission.createMany({
+        data: permissions.map((permission) => ({
+          roleId: role.id,
+          permissionId: permission.id
+        }))
+      });
+    }
+  });
+
+  await createAuditLog({
+    operatorId: input.session.userId,
+    action: "ROLE_PERMISSIONS_UPDATED",
+    targetType: "ROLE",
+    targetId: role.id,
+    detail: {
+      roleCode: role.code,
+      beforePermissions: role.permissions.map((item) => item.permission.code),
+      afterPermissions: permissions.map((item) => item.code)
+    }
+  });
+
+  return {
+    ok: true,
+    message: `角色 ${role.name} 的权限已更新。`
   };
 }

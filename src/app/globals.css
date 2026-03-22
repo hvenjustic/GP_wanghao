@@ -502,7 +502,7 @@ a {
 
 .batch-panel-main {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) auto;
+  grid-template-columns: 180px minmax(0, 1fr) 220px 220px auto;
   gap: 16px;
   align-items: end;
   margin-top: 16px;
@@ -510,6 +510,32 @@ a {
 
 .batch-panel-note {
   max-width: 420px;
+}
+
+.role-card {
+  display: grid;
+  gap: 14px;
+}
+
+.checkbox-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.checkbox-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(23, 104, 172, 0.04);
+  border: 1px solid rgba(23, 104, 172, 0.08);
+  font-size: 0.9rem;
+}
+
+.checkbox-card input {
+  accent-color: var(--brand);
 }
 
 .button-primary,

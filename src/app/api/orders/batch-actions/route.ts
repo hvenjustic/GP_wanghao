@@ -10,7 +10,8 @@ import {
 const batchOrderActionCodes: BatchOrderActionCode[] = [
   "approve-review",
   "lock-order",
-  "unlock-order"
+  "unlock-order",
+  "ship-order"
 ];
 
 function getSingleFormValue(formData: FormData, key: string) {
@@ -35,14 +36,15 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  if (!hasPermission(session, "orders:review")) {
-    return NextResponse.redirect(new URL("/forbidden?required=orders:review", request.url), {
+  const formData = await request.formData();
+  const action = getSingleFormValue(formData, "action") as BatchOrderActionCode;
+  const requiredPermission = action === "ship-order" ? "orders:ship" : "orders:review";
+
+  if (!hasPermission(session, requiredPermission)) {
+    return NextResponse.redirect(new URL(`/forbidden?required=${requiredPermission}`, request.url), {
       status: 303
     });
   }
-
-  const formData = await request.formData();
-  const action = getSingleFormValue(formData, "action") as BatchOrderActionCode;
   const redirectTo = getSafeRedirectTarget(getSingleFormValue(formData, "redirectTo"));
   const orderIds = formData
     .getAll("orderIds")
@@ -59,7 +61,9 @@ export async function POST(request: NextRequest) {
     action,
     session,
     payload: {
-      reason: getSingleFormValue(formData, "reason")
+      reason: getSingleFormValue(formData, "reason"),
+      shippingCompany: getSingleFormValue(formData, "shippingCompany"),
+      trackingPrefix: getSingleFormValue(formData, "trackingPrefix")
     }
   });
 

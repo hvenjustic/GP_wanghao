@@ -16,7 +16,9 @@ const orderActionCodes: OrderActionCode[] = [
   "assign-warehouse",
   "ship-order",
   "lock-order",
-  "unlock-order"
+  "unlock-order",
+  "mark-abnormal",
+  "clear-abnormal"
 ];
 
 function getSingleFormValue(formData: FormData, key: string) {
@@ -68,6 +70,7 @@ export async function POST(
       reason: getSingleFormValue(formData, "reason"),
       warehouseCode: getSingleFormValue(formData, "warehouseCode"),
       trackingNo: getSingleFormValue(formData, "trackingNo"),
+      trackingPrefix: getSingleFormValue(formData, "trackingPrefix"),
       shippingCompany: getSingleFormValue(formData, "shippingCompany")
     }
   });

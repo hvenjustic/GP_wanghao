@@ -26,11 +26,13 @@ export type OrderActionCode =
   | "assign-warehouse"
   | "ship-order"
   | "lock-order"
-  | "unlock-order";
+  | "unlock-order"
+  | "mark-abnormal"
+  | "clear-abnormal";
 
 export type BatchOrderActionCode = Extract<
   OrderActionCode,
-  "approve-review" | "lock-order" | "unlock-order"
+  "approve-review" | "lock-order" | "unlock-order" | "ship-order"
 >;
 
 type SearchParamMap = Record<string, string | string[] | undefined>;
@@ -42,6 +44,7 @@ type PerformOrderActionInput = {
   payload?: {
     warehouseCode?: string;
     trackingNo?: string;
+    trackingPrefix?: string;
     shippingCompany?: string;
     reason?: string;
   };
@@ -221,6 +224,8 @@ function getRequiredPermissionForAction(action: OrderActionCode): PermissionCode
     case "reject-review":
     case "lock-order":
     case "unlock-order":
+    case "mark-abnormal":
+    case "clear-abnormal":
       return "orders:review";
     case "assign-warehouse":
       return "orders:assign-warehouse";
@@ -423,7 +428,7 @@ function mapPrismaOrderToListItem(order: PrismaOrderListPayload) {
 }
 
 function getActionAvailabilityFromPermissions(
-  order: Pick<OrderRecord, "status" | "isLocked">,
+  order: Pick<OrderRecord, "status" | "isLocked" | "isAbnormal">,
   permissions: PermissionCode[]
 ) {
   const canReview = permissions.includes("orders:review");
@@ -431,6 +436,7 @@ function getActionAvailabilityFromPermissions(
   const canShip = permissions.includes("orders:ship");
   const isReviewStage = ["PENDING_REVIEW", "MANUAL_REVIEW"].includes(order.status);
   const isWarehouseStage = ["PENDING_WAREHOUSE", "PENDING_SHIPMENT"].includes(order.status);
+  const canMarkAbnormalBase = !["CANCELED", "COMPLETED"].includes(order.status);
 
   return {
     canApproveReview: canReview && isReviewStage && !order.isLocked,
@@ -441,7 +447,9 @@ function getActionAvailabilityFromPermissions(
       canReview &&
       !order.isLocked &&
       !["SHIPPED", "CANCELED", "COMPLETED"].includes(order.status),
-    canUnlock: canReview && order.isLocked
+    canUnlock: canReview && order.isLocked,
+    canMarkAbnormal: canReview && canMarkAbnormalBase && !order.isAbnormal,
+    canClearAbnormal: canReview && order.isAbnormal
   };
 }
 
@@ -673,6 +681,72 @@ function applyOrderActionToRecord(
       return {
         ok: true,
         message: `订单 ${nextRecord.orderNo} 已发货。`,
+        nextRecord,
+        newLog
+      };
+    }
+
+    case "mark-abnormal": {
+      if (!availability.canMarkAbnormal) {
+        return {
+          ok: false,
+          message: "当前订单状态不允许标记异常。"
+        };
+      }
+
+      if (!payload?.reason?.trim()) {
+        return {
+          ok: false,
+          message: "标记异常必须填写原因。"
+        };
+      }
+
+      nextRecord.isAbnormal = true;
+      appendTag(nextRecord, "人工异常");
+      const newLog = createManualLogEntry(
+        nextRecord.id,
+        session.name,
+        "标记异常",
+        payload.reason.trim()
+      );
+      nextRecord.logs.unshift(newLog);
+
+      return {
+        ok: true,
+        message: `订单 ${nextRecord.orderNo} 已标记为异常。`,
+        nextRecord,
+        newLog
+      };
+    }
+
+    case "clear-abnormal": {
+      if (!availability.canClearAbnormal) {
+        return {
+          ok: false,
+          message: "当前订单不处于异常状态。"
+        };
+      }
+
+      if (!payload?.reason?.trim()) {
+        return {
+          ok: false,
+          message: "解除异常必须填写原因。"
+        };
+      }
+
+      nextRecord.isAbnormal = false;
+      removeTag(nextRecord, "人工异常");
+      const newLog = createManualLogEntry(
+        nextRecord.id,
+        session.name,
+        "解除异常",
+        payload.reason.trim()
+      );
+      nextRecord.logs.unshift(newLog);
+
+      return {
+        ok: true,
+        message: `订单 ${nextRecord.orderNo} 已解除异常。`,
         nextRecord,
         newLog
       };
@@ -957,6 +1031,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
         before: {
           status: currentRecord.status,
           isLocked: currentRecord.isLocked,
+          isAbnormal: currentRecord.isAbnormal,
           warehouseCode: currentRecord.warehouseCode,
           warehouseName: currentRecord.warehouseName,
           shipment: currentRecord.shipment
@@ -964,6 +1039,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
         after: {
           status: nextRecord.status,
           isLocked: nextRecord.isLocked,
+          isAbnormal: nextRecord.isAbnormal,
           warehouseCode: nextRecord.warehouseCode,
           warehouseName: nextRecord.warehouseName,
           shipment: nextRecord.shipment
@@ -982,6 +1058,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
           before: {
             status: currentRecord.status,
             isLocked: currentRecord.isLocked,
+            isAbnormal: currentRecord.isAbnormal,
             warehouseCode: currentRecord.warehouseCode,
             warehouseName: currentRecord.warehouseName,
             shipment: currentRecord.shipment
@@ -989,6 +1066,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
           after: {
             status: nextRecord.status,
             isLocked: nextRecord.isLocked,
+            isAbnormal: nextRecord.isAbnormal,
             warehouseCode: nextRecord.warehouseCode,
             warehouseName: nextRecord.warehouseName,
             shipment: nextRecord.shipment
@@ -1063,7 +1141,7 @@ export async function getWarehouseOptions() {
 }
 
 export function getOrderActionAvailability(
-  order: Pick<OrderRecord, "status" | "isLocked">,
+  order: Pick<OrderRecord, "status" | "isLocked" | "isAbnormal">,
   permissions: PermissionCode[]
 ) {
   return getActionAvailabilityFromPermissions(order, permissions);
@@ -1100,8 +1178,12 @@ export function getOrderAvailableActions(
     actions.push("解锁");
   }
 
-  if (permissions.includes("orders:review") && order.isAbnormal) {
-    actions.push("处理异常");
+  if (availability.canMarkAbnormal) {
+    actions.push("标记异常");
+  }
+
+  if (availability.canClearAbnormal) {
+    actions.push("解除异常");
   }
 
   return actions;
@@ -1128,11 +1210,27 @@ export async function performBulkOrderAction(input: PerformBulkOrderActionInput)
   let successCount = 0;
 
   for (const orderId of uniqueOrderIds) {
+    const orderDetail =
+      input.action === "ship-order" ? await getOrderDetail(orderId) : null;
+
+    if (input.action === "ship-order" && !orderDetail) {
+      failures.push(`${orderId}: 订单不存在。`);
+      continue;
+    }
+
+    const trackingNo =
+      input.action === "ship-order"
+        ? `${input.payload?.trackingPrefix?.trim() || "BATCH"}-${orderDetail?.orderNo.slice(-6)}`
+        : input.payload?.trackingNo;
+
     const result = await performOrderAction({
       orderId,
       action: input.action,
       session: input.session,
-      payload: input.payload
+      payload: {
+        ...input.payload,
+        trackingNo
+      }
     });
 
     if (result.ok) {

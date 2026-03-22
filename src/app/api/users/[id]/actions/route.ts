@@ -38,7 +38,7 @@ export async function POST(
   const action = getSingleFormValue(formData, "action");
   const redirectTo = "/users";
 
-  if (action !== "set-status" && action !== "set-role") {
+  if (action !== "set-status" && action !== "set-role" && action !== "reset-password") {
     const invalidUrl = new URL(redirectTo, request.url);
     invalidUrl.searchParams.set("error", "不支持的用户管理操作。");
     return NextResponse.redirect(invalidUrl, { status: 303 });
@@ -55,7 +55,8 @@ export async function POST(
         | "OPERATOR"
         | "AUDITOR"
         | "CONFIGURATOR"
-        | undefined
+        | undefined,
+      newPassword: getSingleFormValue(formData, "newPassword")
     }
   });
 

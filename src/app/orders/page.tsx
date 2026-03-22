@@ -71,7 +71,9 @@ export default async function OrdersPage({
   const notice = getSingleValue(rawSearchParams.notice);
   const error = getSingleValue(rawSearchParams.error);
   const redirectTo = buildCurrentListUrl(rawSearchParams);
-  const canBatchReview = currentUser.permissions.includes("orders:review");
+  const canBatchManage =
+    currentUser.permissions.includes("orders:review") ||
+    currentUser.permissions.includes("orders:ship");
 
   return (
     <div className="page-grid">
@@ -195,16 +197,23 @@ export default async function OrdersPage({
         title="订单工作台"
         description={`当前共返回 ${orderResult.total} 条订单。行内动作会根据登录角色权限动态变化。`}
       >
-        {canBatchReview ? (
+        {canBatchManage ? (
           <form className="batch-panel" action="/api/orders/batch-actions" method="post">
             <input type="hidden" name="redirectTo" value={redirectTo} />
             <div className="batch-panel-main">
               <label className="form-field">
                 <span className="field-label">批量动作</span>
                 <select className="select-input" name="action" defaultValue="approve-review">
-                  <option value="approve-review">批量审核通过</option>
-                  <option value="lock-order">批量锁单</option>
-                  <option value="unlock-order">批量解锁</option>
+                  {currentUser.permissions.includes("orders:review") ? (
+                    <>
+                      <option value="approve-review">批量审核通过</option>
+                      <option value="lock-order">批量锁单</option>
+                      <option value="unlock-order">批量解锁</option>
+                    </>
+                  ) : null}
+                  {currentUser.permissions.includes("orders:ship") ? (
+                    <option value="ship-order">批量发货</option>
+                  ) : null}
                 </select>
               </label>
               <label className="form-field batch-panel-note">
@@ -212,7 +221,23 @@ export default async function OrdersPage({
                 <input
                   className="text-input"
                   name="reason"
-                  placeholder="锁单或解锁时必须填写，审核通过可选"
+                  placeholder="锁单、解锁和批量发货建议填写原因"
+                />
+              </label>
+              <label className="form-field">
+                <span className="field-label">物流公司</span>
+                <input
+                  className="text-input"
+                  name="shippingCompany"
+                  placeholder="批量发货时填写，例如 顺丰速运"
+                />
+              </label>
+              <label className="form-field">
+                <span className="field-label">单号前缀</span>
+                <input
+                  className="text-input"
+                  name="trackingPrefix"
+                  placeholder="批量发货时用于生成单号，例如 SF202603"
                 />
               </label>
               <div className="form-actions">
