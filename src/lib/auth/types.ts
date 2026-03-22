@@ -4,6 +4,8 @@ export const permissionCodes = [
   "orders:review",
   "orders:assign-warehouse",
   "orders:ship",
+  "users:view",
+  "users:manage",
   "meta:view",
   "meta:manage",
   "rules:view",

@@ -28,6 +28,11 @@ export type OrderActionCode =
   | "lock-order"
   | "unlock-order";
 
+export type BatchOrderActionCode = Extract<
+  OrderActionCode,
+  "approve-review" | "lock-order" | "unlock-order"
+>;
+
 type SearchParamMap = Record<string, string | string[] | undefined>;
 
 type PerformOrderActionInput = {
@@ -40,6 +45,13 @@ type PerformOrderActionInput = {
     shippingCompany?: string;
     reason?: string;
   };
+};
+
+type PerformBulkOrderActionInput = {
+  orderIds: string[];
+  action: BatchOrderActionCode;
+  session: AuthSession;
+  payload?: PerformOrderActionInput["payload"];
 };
 
 type ActionApplyResult =
@@ -1100,4 +1112,56 @@ export async function performOrderAction(input: PerformOrderActionInput) {
     () => performOrderActionFromPrisma(input),
     () => performOrderActionFromMemory(input)
   );
+}
+
+export async function performBulkOrderAction(input: PerformBulkOrderActionInput) {
+  const uniqueOrderIds = Array.from(new Set(input.orderIds.filter(Boolean)));
+
+  if (uniqueOrderIds.length === 0) {
+    return {
+      ok: false,
+      message: "请至少选择一条订单。"
+    };
+  }
+
+  const failures: string[] = [];
+  let successCount = 0;
+
+  for (const orderId of uniqueOrderIds) {
+    const result = await performOrderAction({
+      orderId,
+      action: input.action,
+      session: input.session,
+      payload: input.payload
+    });
+
+    if (result.ok) {
+      successCount += 1;
+      continue;
+    }
+
+    failures.push(`${orderId}: ${result.message}`);
+  }
+
+  const failedCount = failures.length;
+  const summary = `共 ${uniqueOrderIds.length} 条，成功 ${successCount} 条，失败 ${failedCount} 条。`;
+
+  if (successCount === 0) {
+    return {
+      ok: false,
+      message: `批量处理失败。${summary} ${failures.slice(0, 3).join(" ")}`
+    };
+  }
+
+  if (failedCount > 0) {
+    return {
+      ok: true,
+      message: `批量处理部分成功。${summary} ${failures.slice(0, 3).join(" ")}`
+    };
+  }
+
+  return {
+    ok: true,
+    message: `批量处理完成。${summary}`
+  };
 }

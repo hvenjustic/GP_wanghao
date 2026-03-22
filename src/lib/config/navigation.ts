@@ -21,6 +21,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "orders:view"
   },
   {
+    href: "/users",
+    label: "用户权限",
+    description: "管理用户状态、角色分配和权限边界。",
+    permission: "users:view"
+  },
+  {
     href: "/meta",
     label: "低代码配置",
     description: "说明字段、页面、动作和发布治理能力。",

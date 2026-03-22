@@ -24,14 +24,54 @@ function getStatusClassName(statusCode: keyof typeof orderStateMap) {
   return `status-pill status-pill-${state.tone}`;
 }
 
+function getSingleValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  return value ?? "";
+}
+
+function buildCurrentListUrl(searchParams: Record<string, string | string[] | undefined>) {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (key === "notice" || key === "error") {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) {
+          query.append(key, item);
+        }
+      }
+      continue;
+    }
+
+    if (value) {
+      query.set(key, value);
+    }
+  }
+
+  const queryString = query.toString();
+
+  return queryString ? `/orders?${queryString}` : "/orders";
+}
+
 export default async function OrdersPage({
   searchParams
 }: {
   searchParams: SearchParams;
 }) {
   const currentUser = await requirePermission("orders:view", "/orders");
-  const filters = normalizeOrderFilters(await searchParams);
+  const rawSearchParams = await searchParams;
+  const filters = normalizeOrderFilters(rawSearchParams);
   const orderResult = await getOrderList(filters);
+  const notice = getSingleValue(rawSearchParams.notice);
+  const error = getSingleValue(rawSearchParams.error);
+  const redirectTo = buildCurrentListUrl(rawSearchParams);
+  const canBatchReview = currentUser.permissions.includes("orders:review");
 
   return (
     <div className="page-grid">
@@ -47,6 +87,9 @@ export default async function OrdersPage({
           {currentUser.name} · {currentUser.roleName}
         </div>
       </header>
+
+      {notice ? <div className="alert-banner alert-banner-success">{notice}</div> : null}
+      {error ? <div className="alert-banner alert-banner-error">{error}</div> : null}
 
       <div className="stats-grid">
         <MetricCard
@@ -152,7 +195,130 @@ export default async function OrdersPage({
         title="订单工作台"
         description={`当前共返回 ${orderResult.total} 条订单。行内动作会根据登录角色权限动态变化。`}
       >
-        {orderResult.items.length > 0 ? (
+        {canBatchReview ? (
+          <form className="batch-panel" action="/api/orders/batch-actions" method="post">
+            <input type="hidden" name="redirectTo" value={redirectTo} />
+            <div className="batch-panel-main">
+              <label className="form-field">
+                <span className="field-label">批量动作</span>
+                <select className="select-input" name="action" defaultValue="approve-review">
+                  <option value="approve-review">批量审核通过</option>
+                  <option value="lock-order">批量锁单</option>
+                  <option value="unlock-order">批量解锁</option>
+                </select>
+              </label>
+              <label className="form-field batch-panel-note">
+                <span className="field-label">操作原因</span>
+                <input
+                  className="text-input"
+                  name="reason"
+                  placeholder="锁单或解锁时必须填写，审核通过可选"
+                />
+              </label>
+              <div className="form-actions">
+                <button type="submit" className="button-primary">
+                  执行批量动作
+                </button>
+              </div>
+            </div>
+
+            {orderResult.items.length > 0 ? (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>选择</th>
+                    <th>订单信息</th>
+                    <th>客户</th>
+                    <th>状态</th>
+                    <th>仓库</th>
+                    <th>标签</th>
+                    <th>金额</th>
+                    <th>创建时间</th>
+                    <th>可执行操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderResult.items.map((order) => {
+                    const state = orderStateMap[order.status];
+                    const actions = getOrderAvailableActions(order, currentUser.permissions);
+
+                    return (
+                      <tr key={order.id}>
+                        <td>
+                          <input
+                            className="table-checkbox"
+                            type="checkbox"
+                            name="orderIds"
+                            value={order.id}
+                          />
+                        </td>
+                        <td>
+                          <div className="table-cell-stack">
+                            <strong>
+                              <Link href={`/orders/${order.id}`} className="table-link">
+                                {order.orderNo}
+                              </Link>
+                            </strong>
+                            <span className="muted">{order.sourceChannel}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="table-cell-stack">
+                            <strong>{order.customerName}</strong>
+                            <span className="muted">{order.phone}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="table-cell-stack">
+                            <span className={getStatusClassName(order.status)}>{state.name}</span>
+                            {order.isAbnormal ? (
+                              <span className="status-pill status-pill-red">异常</span>
+                            ) : null}
+                            {order.isLocked ? (
+                              <span className="status-pill status-pill-slate">锁单</span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{order.warehouseName ?? <span className="muted">待分配</span>}</td>
+                        <td>
+                          <div className="chip-row">
+                            {order.tags.map((tag) => (
+                              <span key={tag} className="chip">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>{formatAmount(order.amount)}</td>
+                        <td>{order.createdAt}</td>
+                        <td>
+                          <div className="chip-row">
+                            {actions.map((action) => (
+                              <span key={action} className="chip">
+                                {action}
+                              </span>
+                            ))}
+                            <Link href={`/orders/${order.id}`} className="chip">
+                              打开详情
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty-state">
+                <strong>没有匹配的订单</strong>
+                <p className="muted">当前筛选条件没有命中结果，可以重置筛选后重试。</p>
+                <Link href="/orders" className="button-secondary">
+                  返回全部订单
+                </Link>
+              </div>
+            )}
+          </form>
+        ) : orderResult.items.length > 0 ? (
           <table className="data-table">
             <thead>
               <tr>

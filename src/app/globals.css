@@ -379,6 +379,13 @@ a {
   line-height: 1.6;
 }
 
+.table-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -457,6 +464,10 @@ a {
   font: inherit;
 }
 
+.select-input-compact {
+  min-height: 40px;
+}
+
 .text-input:focus,
 .select-input:focus {
   outline: none;
@@ -476,6 +487,29 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.table-form {
+  display: grid;
+  gap: 10px;
+  min-width: 170px;
+}
+
+.batch-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.batch-panel-main {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+  margin-top: 16px;
+}
+
+.batch-panel-note {
+  max-width: 420px;
 }
 
 .button-primary,
@@ -715,6 +749,7 @@ a {
   .kv-grid,
   .operation-grid,
   .filter-grid,
+  .batch-panel-main,
   .auth-grid,
   .two-col-grid,
   .stats-grid,

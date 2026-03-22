@@ -21,6 +21,8 @@ const permissionDefinitions = [
     scope: "orders"
   },
   { id: "perm-orders-ship", code: "orders:ship", name: "订单发货", scope: "orders" },
+  { id: "perm-users-view", code: "users:view", name: "查看用户权限", scope: "users" },
+  { id: "perm-users-manage", code: "users:manage", name: "管理用户权限", scope: "users" },
   { id: "perm-meta-view", code: "meta:view", name: "查看低代码配置", scope: "meta" },
   { id: "perm-meta-manage", code: "meta:manage", name: "管理低代码配置", scope: "meta" },
   { id: "perm-rules-view", code: "rules:view", name: "查看规则编排", scope: "rules" },
@@ -40,6 +42,8 @@ const rolePermissionMappings = [
   ["role-admin", "perm-orders-review"],
   ["role-admin", "perm-orders-assign-warehouse"],
   ["role-admin", "perm-orders-ship"],
+  ["role-admin", "perm-users-view"],
+  ["role-admin", "perm-users-manage"],
   ["role-admin", "perm-meta-view"],
   ["role-admin", "perm-meta-manage"],
   ["role-admin", "perm-rules-view"],
