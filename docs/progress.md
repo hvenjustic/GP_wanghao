@@ -26,6 +26,7 @@
 - `已完成`：安装并锁定首批核心依赖，生成 `pnpm-lock.yaml`。
 - `已完成`：建立 `src/app`、`src/components`、`src/features`、`src/lib`、`src/server`、`prisma` 目录结构。
 - `已完成`：新增 `.env.example`，补充数据库基础环境变量模板。
+- `已完成`：按当前 PostgreSQL 服务器地址更新环境变量模板，并补充 `.env.local` 运行配置。
 - `已完成`：新增健康检查接口 `/api/health`，可用于部署后联通性验证。
 
 ### 2.2 页面与前端骨架
