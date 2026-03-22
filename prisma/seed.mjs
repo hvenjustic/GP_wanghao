@@ -114,6 +114,400 @@ const customers = [
   { id: "customer-004", name: "陈思远", phone: "13600005555", level: "会员" }
 ];
 
+const entityMetas = [
+  {
+    id: "entity-meta-order-extension",
+    entityCode: "ORDER_EXTENSION",
+    name: "订单扩展模型",
+    type: "ORDER_EXTENSION",
+    status: "PUBLISHED",
+    schema: {
+      owner: "订单中台",
+      source: "prisma",
+      editable: true
+    }
+  },
+  {
+    id: "entity-meta-customer-profile",
+    entityCode: "CUSTOMER_PROFILE",
+    name: "客户画像模型",
+    type: "CUSTOMER_EXTENSION",
+    status: "DRAFT",
+    schema: {
+      owner: "运营团队",
+      editable: true,
+      notes: "用于承接客户标签与分层字段"
+    }
+  }
+];
+
+const fieldMetas = [
+  {
+    id: "field-meta-delivery-priority",
+    entityId: "entity-meta-order-extension",
+    fieldCode: "delivery_priority",
+    name: "履约优先级",
+    type: "select",
+    required: false,
+    schema: {
+      options: ["normal", "urgent", "vip"],
+      listVisible: true,
+      detailVisible: true
+    }
+  },
+  {
+    id: "field-meta-review-note",
+    entityId: "entity-meta-order-extension",
+    fieldCode: "review_note",
+    name: "审核备注",
+    type: "text",
+    required: false,
+    schema: {
+      maxLength: 200,
+      formVisible: true,
+      placeholder: "请输入审核补充说明"
+    }
+  },
+  {
+    id: "field-meta-customer-level-tag",
+    entityId: "entity-meta-customer-profile",
+    fieldCode: "customer_level_tag",
+    name: "客户等级标签",
+    type: "select",
+    required: false,
+    schema: {
+      options: ["new", "returning", "vip"],
+      searchVisible: true
+    }
+  }
+];
+
+const pageMetas = [
+  {
+    id: "page-meta-order-extension-list-v1",
+    entityId: "entity-meta-order-extension",
+    pageCode: "order_extension_list",
+    pageType: "list",
+    version: 1,
+    status: "PUBLISHED",
+    schema: {
+      columns: ["orderNo", "delivery_priority", "review_note"],
+      actions: ["view", "edit"],
+      searchFields: ["orderNo", "delivery_priority"]
+    }
+  },
+  {
+    id: "page-meta-order-extension-list-v2",
+    entityId: "entity-meta-order-extension",
+    pageCode: "order_extension_list",
+    pageType: "list",
+    version: 2,
+    status: "DRAFT",
+    schema: {
+      columns: ["orderNo", "delivery_priority", "review_note", "status"],
+      actions: ["view", "edit", "publish"],
+      searchFields: ["orderNo", "delivery_priority", "status"]
+    }
+  },
+  {
+    id: "page-meta-order-extension-detail-v1",
+    entityId: "entity-meta-order-extension",
+    pageCode: "order_extension_detail",
+    pageType: "detail",
+    version: 1,
+    status: "DRAFT",
+    schema: {
+      groups: ["基础信息", "审核信息"],
+      fields: ["delivery_priority", "review_note"]
+    }
+  },
+  {
+    id: "page-meta-customer-profile-form-v1",
+    entityId: "entity-meta-customer-profile",
+    pageCode: "customer_profile_form",
+    pageType: "form",
+    version: 1,
+    status: "DRAFT",
+    schema: {
+      fields: ["customer_level_tag"],
+      submitAction: "saveDraft"
+    }
+  }
+];
+
+const ruleDefinitions = [
+  {
+    id: "rule-def-base-review",
+    ruleCode: "RULE_BASE_REVIEW",
+    name: "订单基础审核",
+    type: "ORDER_REVIEW",
+    scene: "订单创建后",
+    status: "PUBLISHED"
+  },
+  {
+    id: "rule-def-address-risk",
+    ruleCode: "RULE_ADDRESS_RISK",
+    name: "地址风险识别",
+    type: "ORDER_REVIEW",
+    scene: "订单创建后",
+    status: "PUBLISHED"
+  },
+  {
+    id: "rule-def-auto-approve",
+    ruleCode: "RULE_AUTO_APPROVE",
+    name: "自动审核规则",
+    type: "ORDER_REVIEW",
+    scene: "订单创建后",
+    status: "PUBLISHED"
+  },
+  {
+    id: "rule-def-warehouse-priority",
+    ruleCode: "RULE_WAREHOUSE_PRIORITY",
+    name: "分仓优先级规则",
+    type: "WAREHOUSE_ASSIGN",
+    scene: "审核通过后",
+    status: "PUBLISHED"
+  }
+];
+
+const ruleVersions = [
+  {
+    id: "rule-ver-base-review-v12",
+    ruleId: "rule-def-base-review",
+    version: 12,
+    graph: {
+      nodes: ["开始", "信息完整", "低风险", "进入待审核"],
+      edges: 3
+    },
+    publishInfo: {
+      publishedBy: "系统管理员",
+      publishedAt: "2026-03-21 20:30"
+    }
+  },
+  {
+    id: "rule-ver-address-risk-v20",
+    ruleId: "rule-def-address-risk",
+    version: 20,
+    graph: {
+      nodes: ["开始", "地址异常", "锁单", "人工复核"],
+      edges: 3
+    },
+    publishInfo: {
+      publishedBy: "配置实施",
+      publishedAt: "2026-03-21 21:10"
+    }
+  },
+  {
+    id: "rule-ver-auto-approve-v15",
+    ruleId: "rule-def-auto-approve",
+    version: 15,
+    graph: {
+      nodes: ["开始", "低风险", "自动通过"],
+      edges: 2
+    },
+    publishInfo: {
+      publishedBy: "配置实施",
+      publishedAt: "2026-03-21 21:35"
+    }
+  },
+  {
+    id: "rule-ver-warehouse-priority-v11",
+    ruleId: "rule-def-warehouse-priority",
+    version: 11,
+    graph: {
+      nodes: ["开始", "区域判断", "优先级排序", "返回仓库"],
+      edges: 3
+    },
+    publishInfo: {
+      publishedBy: "系统管理员",
+      publishedAt: "2026-03-22 08:50"
+    }
+  }
+];
+
+const ruleExecLogs = [
+  {
+    id: "rule-log-001",
+    ruleVersionId: "rule-ver-base-review-v12",
+    orderId: "order-001",
+    scene: "订单创建后",
+    status: "SUCCESS",
+    durationMs: 84,
+    input: {
+      orderNo: "GP202603220001",
+      amount: 328,
+      tags: ["首单", "高客单"]
+    },
+    result: {
+      decision: "MANUAL_REVIEW",
+      path: "开始 -> 信息完整 -> 低风险 -> 待人工确认",
+      reason: "自动审核入参完整"
+    },
+    createdAt: "2026-03-22T09:16:00.000Z"
+  },
+  {
+    id: "rule-log-002",
+    ruleVersionId: "rule-ver-address-risk-v20",
+    orderId: "order-002",
+    scene: "订单创建后",
+    status: "BLOCKED",
+    durationMs: 126,
+    input: {
+      orderNo: "GP202603220002",
+      receiverCity: "苏州市",
+      riskReason: "楼栋信息缺失"
+    },
+    result: {
+      decision: "LOCK_ORDER",
+      abnormal: true,
+      nextStatus: "MANUAL_REVIEW"
+    },
+    createdAt: "2026-03-22T09:44:00.000Z"
+  },
+  {
+    id: "rule-log-003",
+    ruleVersionId: "rule-ver-auto-approve-v15",
+    orderId: "order-003",
+    scene: "订单创建后",
+    status: "SUCCESS",
+    durationMs: 71,
+    input: {
+      orderNo: "GP202603220003",
+      amount: 256,
+      channel: "微信小店"
+    },
+    result: {
+      decision: "APPROVED",
+      nextStatus: "PENDING_WAREHOUSE",
+      path: "开始 -> 低风险 -> 自动通过"
+    },
+    createdAt: "2026-03-22T10:09:00.000Z"
+  },
+  {
+    id: "rule-log-004",
+    ruleVersionId: "rule-ver-warehouse-priority-v11",
+    orderId: "order-004",
+    scene: "审核通过后",
+    status: "SUCCESS",
+    durationMs: 93,
+    input: {
+      orderNo: "GP202603220004",
+      receiverProvince: "浙江省",
+      receiverCity: "宁波市"
+    },
+    result: {
+      assignedWarehouse: "WH-EAST-01",
+      path: "开始 -> 华东区域 -> 华东一仓"
+    },
+    createdAt: "2026-03-22T10:23:00.000Z"
+  }
+];
+
+const auditLogs = [
+  {
+    id: "audit-log-001",
+    operatorId: "demo-admin",
+    action: "USER_LOGIN",
+    targetType: "SESSION",
+    targetId: "demo-admin",
+    detail: {
+      email: "admin@gp.local",
+      result: "SUCCESS"
+    },
+    createdAt: "2026-03-22T08:55:00.000Z"
+  },
+  {
+    id: "audit-log-002",
+    operatorId: "demo-admin",
+    action: "ROLE_PERMISSIONS_UPDATED",
+    targetType: "ROLE",
+    targetId: "role-operator",
+    detail: {
+      roleCode: "OPERATOR",
+      permissionCount: 4
+    },
+    createdAt: "2026-03-22T09:05:00.000Z"
+  },
+  {
+    id: "audit-log-003",
+    operatorId: "demo-ops",
+    action: "ORDER_ACTION_EXECUTED",
+    targetType: "ORDER",
+    targetId: "order-003",
+    detail: {
+      orderNo: "GP202603220003",
+      action: "assign-warehouse",
+      nextStatus: "PENDING_SHIPMENT"
+    },
+    createdAt: "2026-03-22T10:11:00.000Z"
+  },
+  {
+    id: "audit-log-004",
+    operatorId: "demo-admin",
+    action: "USER_PASSWORD_RESET",
+    targetType: "USER",
+    targetId: "demo-ops",
+    detail: {
+      email: "ops@gp.local"
+    },
+    createdAt: "2026-03-22T10:35:00.000Z"
+  },
+  {
+    id: "audit-log-005",
+    operatorId: "demo-admin",
+    action: "USER_STATUS_UPDATED",
+    targetType: "USER",
+    targetId: "demo-auditor",
+    detail: {
+      email: "audit@gp.local",
+      beforeStatus: "ACTIVE",
+      afterStatus: "ACTIVE"
+    },
+    createdAt: "2026-03-22T11:10:00.000Z"
+  },
+  {
+    id: "audit-log-006",
+    operatorId: "demo-config",
+    action: "META_PAGE_VERSION_CLONED",
+    targetType: "PAGE_META",
+    targetId: "page-meta-order-extension-list-v2",
+    detail: {
+      entityCode: "ORDER_EXTENSION",
+      pageCode: "order_extension_list",
+      sourceVersion: 1,
+      targetVersion: 2,
+      note: "为发版前预演新增版本"
+    },
+    createdAt: "2026-03-22T11:20:00.000Z"
+  },
+  {
+    id: "audit-log-007",
+    operatorId: "demo-config",
+    action: "META_ENTITY_PUBLISHED",
+    targetType: "ENTITY_META",
+    targetId: "entity-meta-order-extension",
+    detail: {
+      entityCode: "ORDER_EXTENSION",
+      status: "PUBLISHED"
+    },
+    createdAt: "2026-03-22T11:22:00.000Z"
+  },
+  {
+    id: "audit-log-008",
+    operatorId: "demo-config",
+    action: "META_PAGE_PUBLISHED",
+    targetType: "PAGE_META",
+    targetId: "page-meta-order-extension-list-v1",
+    detail: {
+      entityCode: "ORDER_EXTENSION",
+      pageCode: "order_extension_list",
+      version: 1,
+      previousPublishedVersion: null
+    },
+    createdAt: "2026-03-22T11:24:00.000Z"
+  }
+];
+
 const orders = [
   {
     id: "order-001",
@@ -398,6 +792,12 @@ const orders = [
 
 async function main() {
   await prisma.auditLog.deleteMany();
+  await prisma.ruleExecLog.deleteMany();
+  await prisma.ruleVersion.deleteMany();
+  await prisma.ruleDefinition.deleteMany();
+  await prisma.pageMeta.deleteMany();
+  await prisma.fieldMeta.deleteMany();
+  await prisma.entityMeta.deleteMany();
   await prisma.rolePermission.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.orderOperationLog.deleteMany();
@@ -415,6 +815,9 @@ async function main() {
   await prisma.user.createMany({ data: demoUsers });
   await prisma.warehouse.createMany({ data: warehouses });
   await prisma.customer.createMany({ data: customers });
+  await prisma.entityMeta.createMany({ data: entityMetas });
+  await prisma.fieldMeta.createMany({ data: fieldMetas });
+  await prisma.pageMeta.createMany({ data: pageMetas });
   await prisma.rolePermission.createMany({
     data: rolePermissionMappings.map(([roleId, permissionId]) => ({
       roleId,
@@ -427,6 +830,8 @@ async function main() {
       roleId
     }))
   });
+  await prisma.ruleDefinition.createMany({ data: ruleDefinitions });
+  await prisma.ruleVersion.createMany({ data: ruleVersions });
 
   for (const order of orders) {
     await prisma.order.create({
@@ -465,6 +870,19 @@ async function main() {
       }
     });
   }
+
+  await prisma.ruleExecLog.createMany({
+    data: ruleExecLogs.map((log) => ({
+      ...log,
+      createdAt: new Date(log.createdAt)
+    }))
+  });
+  await prisma.auditLog.createMany({
+    data: auditLogs.map((log) => ({
+      ...log,
+      createdAt: new Date(log.createdAt)
+    }))
+  });
 
   console.log("Seed completed.");
 }

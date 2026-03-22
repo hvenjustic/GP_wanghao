@@ -27,6 +27,12 @@ export const navigationItems: NavigationItem[] = [
     permission: "users:view"
   },
   {
+    href: "/audit-logs",
+    label: "审计日志",
+    description: "追查认证、权限治理和订单关键动作。",
+    permission: "users:view"
+  },
+  {
     href: "/meta",
     label: "低代码配置",
     description: "说明字段、页面、动作和发布治理能力。",
@@ -36,6 +42,12 @@ export const navigationItems: NavigationItem[] = [
     href: "/rules",
     label: "规则编排",
     description: "整理触发场景、节点类型和版本管理。",
+    permission: "rules:view"
+  },
+  {
+    href: "/rule-logs",
+    label: "规则日志",
+    description: "查看规则版本命中结果、输入输出和耗时。",
     permission: "rules:view"
   }
 ];

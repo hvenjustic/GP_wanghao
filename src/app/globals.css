@@ -464,12 +464,30 @@ a {
   font: inherit;
 }
 
+.textarea-input {
+  width: 100%;
+  min-height: 112px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--foreground);
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.textarea-input-compact {
+  min-height: 84px;
+}
+
 .select-input-compact {
   min-height: 40px;
 }
 
 .text-input:focus,
-.select-input:focus {
+.select-input:focus,
+.textarea-input:focus {
   outline: none;
   border-color: rgba(23, 104, 172, 0.56);
   box-shadow: 0 0 0 4px rgba(23, 104, 172, 0.12);
@@ -493,6 +511,10 @@ a {
   display: grid;
   gap: 10px;
   min-width: 170px;
+}
+
+.table-form-wide {
+  min-width: 260px;
 }
 
 .batch-panel {
@@ -520,6 +542,84 @@ a {
 .checkbox-grid {
   display: grid;
   gap: 10px;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.preview-card,
+.version-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(23, 104, 172, 0.04);
+  border: 1px solid rgba(23, 104, 172, 0.1);
+}
+
+.meta-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+  margin-bottom: 18px;
+}
+
+.meta-form-span-2 {
+  grid-column: span 2;
+}
+
+.meta-form-span-full {
+  grid-column: 1 / -1;
+}
+
+.meta-form-actions {
+  align-self: end;
+}
+
+.action-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.input-compact {
+  max-width: 220px;
+}
+
+.version-group-list,
+.version-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.version-card-header,
+.version-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.version-row {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(23, 104, 172, 0.12);
 }
 
 .checkbox-card {
@@ -775,6 +875,8 @@ a {
   .kv-grid,
   .operation-grid,
   .filter-grid,
+  .preview-grid,
+  .meta-form-grid,
   .batch-panel-main,
   .auth-grid,
   .two-col-grid,
