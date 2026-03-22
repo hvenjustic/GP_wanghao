@@ -131,6 +131,7 @@ model OrderItem {
   orderId    String
   skuId      String
   skuName    String
+  spec       String?
   quantity   Int
   price      Decimal  @db.Decimal(10, 2)
   createdAt  DateTime @default(now())
@@ -142,6 +143,7 @@ model Shipment {
   id          String   @id @default(cuid())
   orderId      String
   companyCode  String
+  companyName  String?
   trackingNo   String
   shippedAt    DateTime?
   createdAt    DateTime @default(now())
@@ -232,15 +234,19 @@ model RuleExecLog {
 }
 
 model OrderOperationLog {
-  id         String   @id @default(cuid())
-  orderId     String
-  operatorId  String?
-  action      String
-  reason      String?
-  before      Json?
-  after       Json?
-  createdAt   DateTime @default(now())
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  orderId       String
+  operatorId    String?
+  operatorName  String?
+  type          String   @default("MANUAL")
+  action        String
+  title         String?
+  detail        String?
+  reason        String?
+  before        Json?
+  after         Json?
+  createdAt     DateTime @default(now())
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {

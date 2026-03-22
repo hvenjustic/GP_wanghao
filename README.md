@@ -9,6 +9,8 @@
 - 提供项目总览页、登录页、订单列表页、订单详情页、低代码配置页、规则编排页等基础入口。
 - 实现基于 Cookie 的演示登录权限与页面访问控制。
 - 实现订单列表筛选、订单详情展示和演示状态流转接口。
+- 实现订单数据源切换能力，默认使用内存演示数据，可切换到 Prisma 数据库。
+- 提供 `Prisma seed` 脚本，用于初始化示例订单、仓库、客户和演示账号数据。
 - 提供 `Prisma schema`、健康检查接口、Supabase/Prisma 基础封装和 Zod schema 示例。
 - 保留并沿用现有需求文档与技术路线文档。
 
@@ -51,6 +53,27 @@ pnpm dev
 http://localhost:3000/api/health
 ```
 
+## 切换到 Prisma 数据源
+
+默认使用内存演示数据。如果你已经准备好本地 PostgreSQL，可以这样切换：
+
+```bash
+cp .env.example .env.local
+```
+
+把 `.env.local` 里的 `ORDER_DATA_SOURCE` 改成：
+
+```text
+ORDER_DATA_SOURCE="prisma"
+```
+
+然后执行：
+
+```bash
+pnpm db:push
+pnpm db:seed
+```
+
 ## 演示账号
 
 ```text
@@ -69,6 +92,7 @@ pnpm lint
 pnpm typecheck
 pnpm db:generate
 pnpm db:push
+pnpm db:seed
 ```
 
 ## 文档入口
