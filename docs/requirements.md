@@ -6,7 +6,7 @@
 | --- | --- |
 | 文档用途 | 统一需求范围、产品结构、实施边界与验收口径 |
 | 建设目标 | 先完成可用原型并快速上线，再逐步增强 |
-| 推荐主方案 | Next.js + Ant Design Pro + Supabase + Prisma + React Flow |
+| 推荐主方案 | Next.js + Ant Design Pro + PostgreSQL + Prisma + React Flow |
 
 | 一句话方案：本项目采用 TypeScript 全栈单仓模式，以“订单管理后台 + 低代码配置平台 + 可视化规则编排引擎”为三大核心能力，优先完成一个可演示、可试用、可部署、可扩展的 MVP。 |
 | --- |

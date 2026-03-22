@@ -43,7 +43,7 @@ export default async function LoginPage({
         <h1 className="app-header-title">开始接通登录和权限控制</h1>
         <p className="app-header-subtitle">
           当前阶段先采用演示账号 + Cookie 会话方式打通最小闭环，后续再替换为
-          Supabase Auth 和真实用户体系。不同角色登录后，能看到的导航和页面权限不同。
+          基于数据库的真实用户、角色和权限体系。不同角色登录后，能看到的导航和页面权限不同。
         </p>
       </section>
 

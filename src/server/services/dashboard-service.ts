@@ -25,7 +25,7 @@ export function getDashboardMetrics() {
 
 export function getBootstrapChecklist() {
   return [
-    "补充 Supabase 项目参数并配置本地 .env。",
+    "补充 PostgreSQL 连接参数并配置本地 .env。",
     "执行 pnpm install 安装依赖后，运行 pnpm dev 启动开发环境。",
     "根据需求文档继续细化订单状态流转、配置发布和规则试运行接口。",
     "围绕 Prisma Schema 创建首批迁移并开始接入真实数据。"

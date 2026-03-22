@@ -29,7 +29,7 @@ export function AppShell({ children, currentUser }: AppShellProps) {
           <span className="app-brand-badge">GP</span>
           <div className="app-brand-title">低代码订单管理系统</div>
           <p className="app-brand-desc">
-            基于 Next.js、Prisma、Supabase 和规则编排能力的单仓项目骨架。
+            基于 Next.js、PostgreSQL、Prisma 和规则编排能力的单仓项目骨架。
           </p>
         </div>
 

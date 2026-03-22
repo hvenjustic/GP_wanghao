@@ -25,7 +25,7 @@ export function DashboardHome({ currentUser }: { currentUser: AuthSession }) {
             {currentUser.roleName}。
           </p>
         </div>
-        <div className="app-header-meta">Next.js App Router + Prisma + Supabase</div>
+        <div className="app-header-meta">Next.js App Router + PostgreSQL + Prisma</div>
       </header>
 
       <section className="hero-panel">
