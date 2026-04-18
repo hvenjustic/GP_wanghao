@@ -11,6 +11,11 @@ import {
   type OrderRecord,
   type OrderRuleHit
 } from "@/features/orders/data/mock-orders";
+import {
+  buildRuleExplanationSummary,
+  buildRuleReasonSummary,
+  normalizeRuleNodeExplanations
+} from "@/features/rules/lib/rule-explanation";
 import { prisma } from "@/lib/db/prisma";
 import { hasPermission, type AuthSession, type PermissionCode } from "@/lib/auth/types";
 import { executeOrderRulesForScene } from "@/server/services/order-rule-engine";
@@ -185,6 +190,32 @@ function parseOrderExtension(value: Prisma.JsonValue | null | undefined): OrderE
           path: typeof item.path === "string" ? item.path : "-",
           result: typeof item.result === "string" ? item.result : "-",
           decision: typeof item.decision === "string" ? item.decision : undefined,
+          reason:
+            typeof item.reason === "string"
+              ? item.reason
+              : buildRuleReasonSummary(
+                  normalizeRuleNodeExplanations(
+                    Array.isArray(item.explanations) ? item.explanations : [],
+                    typeof item.path === "string" ? item.path : "-"
+                  ),
+                  typeof item.result === "string" ? item.result : "-",
+                  typeof item.path === "string" ? item.path : "-"
+                ),
+          summary:
+            typeof item.summary === "string"
+              ? item.summary
+              : buildRuleExplanationSummary(
+                  normalizeRuleNodeExplanations(
+                    Array.isArray(item.explanations) ? item.explanations : [],
+                    typeof item.path === "string" ? item.path : "-"
+                  ),
+                  typeof item.result === "string" ? item.result : "-",
+                  typeof item.decision === "string" ? item.decision : undefined
+                ),
+          explanations: normalizeRuleNodeExplanations(
+            Array.isArray(item.explanations) ? item.explanations : [],
+            typeof item.path === "string" ? item.path : "-"
+          ),
           executedAt:
             typeof item.executedAt === "string" ? item.executedAt : formatNow()
         });
@@ -346,7 +377,7 @@ function buildAbnormalHistory(
     .map<OrderAbnormalHistoryEntry>((item) => ({
       id: item.id,
       title: `${item.ruleName} · ${item.version}`,
-      detail: `${item.result}，路径：${item.path}`,
+      detail: item.reason ?? `${item.result}，路径：${item.path}`,
       operator: "规则引擎",
       createdAt: item.executedAt,
       status: "RULE"

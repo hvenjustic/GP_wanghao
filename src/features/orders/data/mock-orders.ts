@@ -1,4 +1,5 @@
 import type { OrderStatusCode } from "@/features/orders/config/order-states";
+import type { RuleNodeExplanation } from "@/features/rules/lib/rule-explanation";
 
 export type OrderListItem = {
   id: string;
@@ -58,6 +59,9 @@ export type OrderRuleHit = {
   path: string;
   result: string;
   decision?: string;
+  reason?: string;
+  summary?: string;
+  explanations?: RuleNodeExplanation[];
   executedAt: string;
 };
 

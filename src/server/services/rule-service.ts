@@ -10,6 +10,11 @@ import {
   summarizeRuleGraph
 } from "@/features/rules/lib/rule-graph";
 import {
+  buildRuleExplanationSummary,
+  buildRuleReasonSummary,
+  type RuleNodeExplanation
+} from "@/features/rules/lib/rule-explanation";
+import {
   describeRuleConditionExpression,
   evaluateRuleConditionExpression,
   parseRuleConditionExpressionConfig
@@ -989,6 +994,7 @@ export async function performRuleTestRunAction(
   const actionLabels: string[] = [];
   const conditionResults: Prisma.InputJsonObject[] = [];
   const branchResults: Prisma.InputJsonObject[] = [];
+  const nodeExplanations: RuleNodeExplanation[] = [];
   let matched = true;
   let currentNode = graphIndex.startNode;
   const visitedNodeIds = new Set<string>();
@@ -997,6 +1003,16 @@ export async function performRuleTestRunAction(
     visitedNodeIds.add(currentNode.id);
     pathLabels.push(currentNode.data.label);
 
+    if (currentNode.data.kind === "start") {
+      nodeExplanations.push({
+        nodeId: currentNode.id,
+        nodeLabel: currentNode.data.label,
+        nodeKind: currentNode.data.kind,
+        outcome: "ENTERED",
+        summary: currentNode.data.detail || `进入规则起点「${currentNode.data.label}」。`
+      });
+    }
+
     if (currentNode.data.kind === "condition") {
       const expression = parseRuleConditionExpressionConfig(currentNode.data.config);
 
@@ -1004,6 +1020,13 @@ export async function performRuleTestRunAction(
         conditionResults.push({
           nodeLabel: currentNode.data.label,
           matched: true,
+          summary: "当前条件节点未配置显式表达式，试运行默认按主路径继续。"
+        });
+        nodeExplanations.push({
+          nodeId: currentNode.id,
+          nodeLabel: currentNode.data.label,
+          nodeKind: currentNode.data.kind,
+          outcome: "MATCHED",
           summary: "当前条件节点未配置显式表达式，试运行默认按主路径继续。"
         });
         currentNode = getLinearNextRuleNode(graphIndex, currentNode.id);
@@ -1015,6 +1038,13 @@ export async function performRuleTestRunAction(
         nodeLabel: currentNode.data.label,
         matched: evaluation.matched,
         expression: describeRuleConditionExpression(expression),
+        summary: evaluation.summary
+      });
+      nodeExplanations.push({
+        nodeId: currentNode.id,
+        nodeLabel: currentNode.data.label,
+        nodeKind: currentNode.data.kind,
+        outcome: evaluation.matched ? "MATCHED" : "NOT_MATCHED",
         summary: evaluation.summary
       });
 
@@ -1046,6 +1076,16 @@ export async function performRuleTestRunAction(
           detail: item.detail ?? null
         }))
       });
+      nodeExplanations.push({
+        nodeId: currentNode.id,
+        nodeLabel: currentNode.data.label,
+        nodeKind: currentNode.data.kind,
+        outcome: "ROUTED",
+        summary: selection.summary,
+        detail: selection.targetLabel
+          ? `目标路径：${selection.targetLabel}`
+          : undefined
+      });
 
       currentNode = selection.targetId
         ? graphIndex.nodesById.get(selection.targetId)
@@ -1055,6 +1095,16 @@ export async function performRuleTestRunAction(
 
     if (currentNode.data.kind === "action" || currentNode.data.kind === "result") {
       actionLabels.push(currentNode.data.label);
+      nodeExplanations.push({
+        nodeId: currentNode.id,
+        nodeLabel: currentNode.data.label,
+        nodeKind: currentNode.data.kind,
+        outcome: currentNode.data.kind === "action" ? "EXECUTED" : "RESULT",
+        summary:
+          currentNode.data.kind === "action"
+            ? `试运行到达动作节点「${currentNode.data.label}」。`
+            : `试运行输出结果节点「${currentNode.data.label}」。`
+      });
     }
 
     currentNode = getLinearNextRuleNode(graphIndex, currentNode.id);
@@ -1066,6 +1116,16 @@ export async function performRuleTestRunAction(
         decision: "NO_MATCH",
         status: "NO_MATCH"
       };
+  const reasonSummary = buildRuleReasonSummary(
+    nodeExplanations,
+    matched ? actionLabels.at(-1) ?? "" : "规则未命中",
+    pathLabels.join(" -> ")
+  );
+  const explanationSummary = buildRuleExplanationSummary(
+    nodeExplanations,
+    matched ? actionLabels.at(-1) ?? "试运行完成" : "规则未命中",
+    decision.decision
+  );
   const durationMs = 48 + graph.nodes.length * 9 + graph.edges.length * 6;
 
   const log = await prisma.ruleExecLog.create({
@@ -1081,8 +1141,11 @@ export async function performRuleTestRunAction(
         matched,
         path: pathLabels.join(" -> "),
         actionSummary: actionLabels,
+        reasonSummary,
+        explanationSummary,
         conditionResults,
         branchResults,
+        nodeExplanations,
         nodeCount: graph.nodes.length,
         edgeCount: graph.edges.length
       }

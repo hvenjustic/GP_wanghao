@@ -8,6 +8,11 @@ import {
   type RuleJsonValue
 } from "@/features/rules/lib/rule-graph";
 import {
+  buildRuleExplanationSummary,
+  buildRuleReasonSummary,
+  type RuleNodeExplanation
+} from "@/features/rules/lib/rule-explanation";
+import {
   evaluateRuleConditionExpression,
   parseRuleConditionExpressionConfig
 } from "@/features/rules/lib/rule-expression";
@@ -117,6 +122,35 @@ function inferRuleDecision(resultNode: RuleGraphNode | undefined, appliedActions
   }
 
   return "none";
+}
+
+function summarizeRuntimeAction(action: RuntimeAction) {
+  switch (action.action) {
+    case "lock-order":
+      return action.note || "执行锁单，当前订单转入人工处理。";
+    case "unlock-order":
+      return "执行解锁，解除规则锁单状态。";
+    case "mark-abnormal":
+      return "执行标记异常，当前订单进入异常处理链路。";
+    case "clear-abnormal":
+      return "执行解除异常，订单可回到主流程继续处理。";
+    case "approve-review":
+      return action.note || "执行自动审核通过，订单流转到待分仓。";
+    case "assign-warehouse":
+      return action.warehouseCode
+        ? `执行自动分仓，目标仓库 ${action.warehouseCode}。`
+        : "执行自动分仓，由规则引擎选择仓库。";
+    case "append-tag":
+      return action.tag ? `追加标签 ${action.tag}。` : "追加规则标签。";
+    case "remove-tag":
+      return action.tag ? `移除标签 ${action.tag}。` : "移除规则标签。";
+    case "set-review-mode":
+      return action.reviewMode ? `更新审核模式为 ${action.reviewMode}。` : "更新审核模式。";
+    case "set-note":
+      return action.note ? `更新系统备注：${action.note}` : "更新系统备注。";
+    case "noop":
+      return "当前动作节点未产生实际业务动作。";
+  }
 }
 
 function appendTag(record: OrderRecord, tag?: string) {
@@ -589,6 +623,7 @@ export async function executeOrderRulesForScene(input: {
     const visitedNodes: RuleGraphNode[] = [];
     const pathLabels: string[] = [];
     const branchSelections: Prisma.InputJsonObject[] = [];
+    const nodeExplanations: RuleNodeExplanation[] = [];
     const beforeRuleState = cloneOrder(workingRecord);
     const appliedActions: RuntimeAction[] = [];
     let matched = true;
@@ -601,19 +636,44 @@ export async function executeOrderRulesForScene(input: {
       visitedNodes.push(currentNode);
       pathLabels.push(currentNode.data.label);
 
+      if (currentNode.data.kind === "start") {
+        nodeExplanations.push({
+          nodeId: currentNode.id,
+          nodeLabel: currentNode.data.label,
+          nodeKind: currentNode.data.kind,
+          outcome: "ENTERED",
+          summary: currentNode.data.detail || `进入规则起点「${currentNode.data.label}」。`
+        });
+      }
+
       if (currentNode.data.kind === "condition") {
         const conditionExpression = parseRuleConditionExpressionConfig(currentNode.data.config);
-        const conditionPassed = conditionExpression
+        const conditionEvaluation = conditionExpression
           ? evaluateRuleConditionExpression(
               conditionExpression,
               buildOrderRuleContext(workingRecord, input.payload)
-            ).matched
+            )
+          : null;
+        const conditionPassed = conditionEvaluation
+          ? conditionEvaluation.matched
           : inferConditionByLabel(
               version.rule.ruleCode,
               currentNode.data.label,
               workingRecord,
               input.payload
             );
+
+        nodeExplanations.push({
+          nodeId: currentNode.id,
+          nodeLabel: currentNode.data.label,
+          nodeKind: currentNode.data.kind,
+          outcome: conditionPassed ? "MATCHED" : "NOT_MATCHED",
+          summary: conditionEvaluation
+            ? conditionEvaluation.summary
+            : conditionPassed
+              ? `条件节点「${currentNode.data.label}」命中，沿主路径继续。`
+              : `条件节点「${currentNode.data.label}」未命中，当前规则停止执行。`
+        });
 
         if (!conditionPassed) {
           matched = false;
@@ -645,6 +705,17 @@ export async function executeOrderRulesForScene(input: {
           }))
         });
 
+        nodeExplanations.push({
+          nodeId: currentNode.id,
+          nodeLabel: currentNode.data.label,
+          nodeKind: currentNode.data.kind,
+          outcome: "ROUTED",
+          summary: selection.summary,
+          detail: selection.targetLabel
+            ? `目标路径：${selection.targetLabel}`
+            : undefined
+        });
+
         currentNode = selection.targetId
           ? graphIndex.nodesById.get(selection.targetId)
           : undefined;
@@ -663,10 +734,27 @@ export async function executeOrderRulesForScene(input: {
           if (runtimeAction.action !== "noop") {
             appliedActions.push(runtimeAction);
           }
+          nodeExplanations.push({
+            nodeId: currentNode.id,
+            nodeLabel: currentNode.data.label,
+            nodeKind: currentNode.data.kind,
+            outcome: "EXECUTED",
+            summary: summarizeRuntimeAction(runtimeAction)
+          });
           if (isRuleActionTerminal(runtimeAction)) {
             shouldStopProcessing = true;
           }
         }
+      }
+
+      if (currentNode.data.kind === "result") {
+        nodeExplanations.push({
+          nodeId: currentNode.id,
+          nodeLabel: currentNode.data.label,
+          nodeKind: currentNode.data.kind,
+          outcome: "RESULT",
+          summary: `结果节点输出「${currentNode.data.label}」。`
+        });
       }
 
       currentNode = getLinearNextRuleNode(graphIndex, currentNode.id);
@@ -692,6 +780,13 @@ export async function executeOrderRulesForScene(input: {
     const blockedByRule =
       input.scene === "发货前校验" &&
       appliedActions.some((action) => action.action === "lock-order" || action.action === "mark-abnormal");
+    const decision = inferRuleDecision(resultNode, appliedActions);
+    const reasonSummary = buildRuleReasonSummary(nodeExplanations, resultText, pathLabels.join(" -> "));
+    const explanationSummary = buildRuleExplanationSummary(
+      nodeExplanations,
+      resultText,
+      decision
+    );
 
     blockedRequestedAction = blockedRequestedAction || blockedByRule;
 
@@ -703,7 +798,10 @@ export async function executeOrderRulesForScene(input: {
       version: `v${version.version}`,
       path: pathLabels.join(" -> "),
       result: resultText,
-      decision: inferRuleDecision(resultNode, appliedActions),
+      decision,
+      reason: reasonSummary,
+      summary: explanationSummary,
+      explanations: nodeExplanations,
       executedAt: now
     };
 
@@ -738,6 +836,9 @@ export async function executeOrderRulesForScene(input: {
         path: hitItem.path,
         result: resultText,
         actions: appliedActions.map((action) => action.action),
+        reasonSummary,
+        explanationSummary,
+        nodeExplanations,
         branches: branchSelections,
         afterStatus: workingRecord.status,
         afterWarehouseCode: workingRecord.warehouseCode,

@@ -1,4 +1,9 @@
 import { Prisma } from "@prisma/client";
+import {
+  buildRuleExplanationSummary,
+  buildRuleReasonSummary,
+  normalizeRuleNodeExplanations
+} from "@/features/rules/lib/rule-explanation";
 import { prisma } from "@/lib/db/prisma";
 
 type SearchParamMap = Record<string, string | string[] | undefined>;
@@ -120,6 +125,17 @@ function summarizeJson(value: Prisma.JsonValue | null | undefined) {
   }
 
   return [formatSummaryValue(value)];
+}
+
+function getJsonString(
+  value: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined,
+  key: string
+) {
+  if (!isJsonRecord(value)) {
+    return "";
+  }
+
+  return typeof value[key] === "string" ? value[key] : "";
 }
 
 export function normalizeAuditLogFilters(searchParams: SearchParamMap): AuditLogFilters {
@@ -418,6 +434,19 @@ export async function getRuleLogOverview(filters: RuleLogFilters) {
   const orderMap = new Map(relatedOrders.map((order) => [order.id, order]));
   const items = logs.map((log) => {
     const relatedOrder = log.orderId ? orderMap.get(log.orderId) : null;
+    const path = getJsonString(log.result, "path");
+    const decision = getJsonString(log.result, "decision");
+    const resultText = getJsonString(log.result, "result") || getJsonString(log.result, "nextStatus");
+    const nodeExplanations = normalizeRuleNodeExplanations(
+      isJsonRecord(log.result) ? log.result.nodeExplanations : [],
+      path
+    );
+    const reasonSummary =
+      getJsonString(log.result, "reasonSummary") ||
+      buildRuleReasonSummary(nodeExplanations, resultText, path);
+    const explanationSummary =
+      getJsonString(log.result, "explanationSummary") ||
+      buildRuleExplanationSummary(nodeExplanations, resultText || "规则执行完成", decision);
 
     return {
       id: log.id,
@@ -431,6 +460,11 @@ export async function getRuleLogOverview(filters: RuleLogFilters) {
       orderId: log.orderId ?? "-",
       orderNo: relatedOrder?.orderNo ?? "未关联订单",
       sourceChannel: relatedOrder?.sourceChannel ?? "-",
+      path,
+      decision,
+      reasonSummary,
+      explanationSummary,
+      nodeExplanations: nodeExplanations.slice(0, 6),
       inputEntries: summarizeJson(log.input),
       resultEntries: summarizeJson(log.result)
     };

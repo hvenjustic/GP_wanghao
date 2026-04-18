@@ -39,7 +39,7 @@ export default async function RuleLogsPage({
         <div>
           <h1 className="app-header-title">规则执行日志</h1>
           <p className="app-header-subtitle">
-            当前页面用于追查规则版本在真实订单上的命中结果、输入输出和执行耗时。第一版先聚焦订单审核与分仓场景的执行记录。
+            当前页面用于追查规则版本在真实订单上的命中结果、输入输出、逐跳解释和执行耗时。现在可以直接核对规则为什么命中、路由到了哪条路径，以及最终输出了什么决策。
           </p>
         </div>
         <div className="app-header-meta">
@@ -171,6 +171,7 @@ export default async function RuleLogsPage({
                 <th>场景 / 状态</th>
                 <th>订单</th>
                 <th>耗时</th>
+                <th>路径 / 解释</th>
                 <th>输入摘要</th>
                 <th>输出摘要</th>
               </tr>
@@ -202,6 +203,23 @@ export default async function RuleLogsPage({
                     </div>
                   </td>
                   <td>{typeof item.durationMs === "number" ? `${item.durationMs} ms` : "-"}</td>
+                  <td>
+                    <div className="table-cell-stack">
+                      <strong>{item.explanationSummary}</strong>
+                      <span className="muted">{item.reasonSummary}</span>
+                      <span className="muted">{item.path || "当前没有记录执行路径"}</span>
+                      {item.nodeExplanations.length > 0
+                        ? item.nodeExplanations.slice(0, 3).map((explanation) => (
+                            <span
+                              key={`${item.id}-explain-${explanation.nodeLabel}-${explanation.summary}`}
+                              className="muted"
+                            >
+                              {explanation.nodeLabel} · {explanation.summary}
+                            </span>
+                          ))
+                        : null}
+                    </div>
+                  </td>
                   <td>
                     <div className="table-cell-stack">
                       {item.inputEntries.length > 0 ? (

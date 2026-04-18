@@ -655,6 +655,36 @@ export default async function OrderDetailPage({
                 <br />
                 <span>{item.result}</span>
                 <br />
+                {item.summary ? (
+                  <>
+                    <span>{item.summary}</span>
+                    <br />
+                  </>
+                ) : null}
+                {item.reason ? (
+                  <>
+                    <span className="muted">命中原因：{item.reason}</span>
+                    <br />
+                  </>
+                ) : null}
+                {item.decision ? (
+                  <>
+                    <span className="muted">规则决策：{item.decision}</span>
+                    <br />
+                  </>
+                ) : null}
+                {item.explanations && item.explanations.length > 0 ? (
+                  <div className="table-cell-stack">
+                    {item.explanations.slice(0, 4).map((explanation) => (
+                      <span
+                        key={`${item.id}-${explanation.nodeLabel}-${explanation.summary}`}
+                        className="muted"
+                      >
+                        {explanation.nodeLabel} · {explanation.summary}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <span className="muted">{item.executedAt}</span>
               </li>
             ))}
