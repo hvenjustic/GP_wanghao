@@ -4,6 +4,7 @@ import { hasPermission } from "@/lib/auth/types";
 import { requirePermission } from "@/lib/auth/guards";
 import { SectionCard } from "@/components/ui/section-card";
 import { metaCapabilities } from "@/features/meta/config/meta-capabilities";
+import { consumeMetaBatchFeedback } from "@/server/services/meta-batch-feedback-store";
 import { getMetaManagementOverview } from "@/server/services/meta-service";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -16,6 +17,12 @@ type MetaHrefInput = {
   fieldDiffSnapshotId?: string;
   pageDiffId?: string;
   anchor?: string;
+};
+
+type MetaBatchCandidateItem = {
+  ref: string;
+  label: string;
+  description: string;
 };
 
 function getSingleValue(value: string | string[] | undefined) {
@@ -65,6 +72,10 @@ function getDiffKindLabel(kind: string) {
   }
 }
 
+function getBatchResultClassName(ok: boolean) {
+  return ok ? "status-pill status-pill-green" : "status-pill status-pill-red";
+}
+
 function buildMetaHref(input: MetaHrefInput) {
   const query = new URLSearchParams();
   query.set("entityPreviewId", input.entityId);
@@ -101,6 +112,70 @@ function buildPreviewHref(entityId: string, pageId?: string, fieldId?: string) {
   });
 }
 
+function buildCurrentMetaUrl(params: Record<string, string | string[] | undefined>) {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "notice" || key === "error" || key === "batchFeedbackId") {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) {
+          query.append(key, item);
+        }
+      }
+      continue;
+    }
+
+    if (value) {
+      query.set(key, value);
+    }
+  }
+
+  const queryString = query.toString();
+  return `/meta${queryString ? `?${queryString}` : ""}`;
+}
+
+function BatchCandidateChecklist({
+  title,
+  description,
+  items
+}: {
+  title: string;
+  description: string;
+  items: MetaBatchCandidateItem[];
+}) {
+  return (
+    <div className="version-row">
+      <div className="table-cell-stack">
+        <strong>{title}</strong>
+        <span className="muted">{description}</span>
+      </div>
+
+      {items.length > 0 ? (
+        <div className="checkbox-grid">
+          {items.map((item) => (
+            <label key={item.ref} className="checkbox-line">
+              <input type="checkbox" name="targetRefs" value={item.ref} />
+              <span className="table-cell-stack">
+                <strong>{item.label}</strong>
+                <span className="muted">{item.description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <strong>当前没有可选对象。</strong>
+          <span className="muted">先新增草稿或保留历史版本后，这里才会出现候选集。</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function MetaPage({
   searchParams
 }: {
@@ -116,6 +191,7 @@ export default async function MetaPage({
   const entityDiffSnapshotId = getSingleValue(params.entityDiffSnapshotId);
   const fieldDiffSnapshotId = getSingleValue(params.fieldDiffSnapshotId);
   const pageDiffId = getSingleValue(params.pageDiffId);
+  const batchFeedbackId = getSingleValue(params.batchFeedbackId);
   const overview = await getMetaManagementOverview({
     entityPreviewId: previewEntityId,
     pagePreviewId: previewPageId,
@@ -124,7 +200,10 @@ export default async function MetaPage({
     fieldDiffSnapshotId,
     pageDiffId
   });
+  const batchFeedback = batchFeedbackId ? consumeMetaBatchFeedback(batchFeedbackId) : null;
   const canManage = hasPermission(currentUser, "meta:manage");
+  const topology = overview.preview.topology;
+  const redirectTo = `${buildCurrentMetaUrl(params)}#batch-governance`;
 
   return (
     <div className="page-grid">
@@ -697,6 +776,311 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        eyebrow="依赖拓扑"
+        title="页面、字段与规则引用关系"
+        description="这里把当前预览实体下的字段、页面版本和规则版本串起来，帮助判断某个字段改动会波及哪些配置对象。"
+      >
+        {topology ? (
+          <>
+            <div className="chip-row">
+              <span className="status-pill status-pill-blue">节点 {topology.summary.nodeCount}</span>
+              <span className="status-pill status-pill-blue">关系 {topology.summary.edgeCount}</span>
+              <span className="status-pill status-pill-green">
+                页面引用 {topology.summary.pageReferenceCount}
+              </span>
+              <span className="status-pill status-pill-amber">
+                规则引用 {topology.summary.ruleReferenceCount}
+              </span>
+            </div>
+
+            <div className="three-col-grid">
+              <div className="version-card">
+                <div className="table-cell-stack">
+                  <strong>字段节点</strong>
+                  <span className="muted">
+                    当前实体共有 {topology.summary.fieldCount} 个字段节点。
+                  </span>
+                </div>
+                {topology.fieldItems.length > 0 ? (
+                  <ul className="timeline-list">
+                    {topology.fieldItems.map((field) => (
+                      <li key={field.id}>
+                        <span className="timeline-title">
+                          {field.fieldCode} · {field.name}
+                        </span>
+                        <span className={getStatusClassName(field.status)}>{field.status}</span>
+                        <br />
+                        <span className="muted">
+                          页面引用 {field.pageRefCount} 次，其中已发布 {field.publishedPageRefCount} 次；规则引用{" "}
+                          {field.ruleRefCount} 次，其中活跃规则 {field.activeRuleRefCount} 次。
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前实体下没有字段。</strong>
+                    <span className="muted">请先新增字段后再查看依赖拓扑。</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="version-card">
+                <div className="table-cell-stack">
+                  <strong>页面节点</strong>
+                  <span className="muted">
+                    当前实体共有 {topology.summary.pageCount} 个页面版本节点。
+                  </span>
+                </div>
+                {topology.pageItems.length > 0 ? (
+                  <ul className="timeline-list">
+                    {topology.pageItems.map((page) => (
+                      <li key={page.id}>
+                        <span className="timeline-title">
+                          {page.pageCode} · v{page.version}
+                        </span>
+                        <span className={getStatusClassName(page.status)}>{page.status}</span>
+                        <br />
+                        <span className="muted">
+                          {page.pageType} · 引用字段：
+                          {page.matchedFieldCodes.length > 0
+                            ? ` ${page.matchedFieldCodes.join(" / ")}`
+                            : " 当前没有低代码字段引用"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前实体下没有页面版本。</strong>
+                    <span className="muted">请先新增页面配置后再查看依赖拓扑。</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="version-card">
+                <div className="table-cell-stack">
+                  <strong>规则节点</strong>
+                  <span className="muted">
+                    当前实体相关字段共命中 {topology.summary.ruleCount} 个规则版本节点。
+                  </span>
+                </div>
+                {topology.ruleItems.length > 0 ? (
+                  <ul className="timeline-list">
+                    {topology.ruleItems.map((rule) => (
+                      <li key={rule.versionId}>
+                        <span className="timeline-title">
+                          {rule.ruleCode} · v{rule.version}
+                        </span>
+                        <span
+                          className={
+                            rule.isActive
+                              ? "status-pill status-pill-green"
+                              : "status-pill status-pill-slate"
+                          }
+                        >
+                          {rule.isActive ? "活跃版本" : "历史版本"}
+                        </span>
+                        <br />
+                        <span className="muted">
+                          {rule.ruleName} · {rule.scene} · 引用字段 {rule.referencedFields.join(" / ")}
+                        </span>
+                        <br />
+                        <span className="muted">
+                          命中节点：{rule.nodeLabels.length > 0 ? rule.nodeLabels.join(" / ") : "未识别"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前实体字段还没有规则引用。</strong>
+                    <span className="muted">后续规则图引用这些字段后，会自动出现在这里。</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>关系边清单</strong>
+                <span className="muted">
+                  从“实体 → 字段 / 页面”，再到“字段 → 页面 / 规则”逐条展示当前拓扑关系。
+                </span>
+              </div>
+              <ul className="timeline-list">
+                {topology.edges.map((edge) => {
+                  const sourceNode = topology.nodes.find((node) => node.id === edge.sourceId);
+                  const targetNode = topology.nodes.find((node) => node.id === edge.targetId);
+
+                  return (
+                    <li key={edge.id}>
+                      <span className="timeline-title">
+                        {sourceNode?.label ?? edge.sourceId} → {targetNode?.label ?? edge.targetId}
+                      </span>
+                      <span className="muted">
+                        {edge.label} · {edge.kind}
+                      </span>
+                      <br />
+                      <span className="muted">
+                        {sourceNode?.detail ?? "无节点详情"} / {targetNode?.detail ?? "无节点详情"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </>
+        ) : (
+          <div className="empty-state">
+            <strong>当前还没有可展示的依赖拓扑。</strong>
+            <span className="muted">请先选择实体，再查看字段、页面和规则之间的引用关系。</span>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        eyebrow="批量治理"
+        title="批量发布与回滚"
+        description="当前批量治理直接复用单对象版本治理规则，支持一次选择多类对象执行发布或回滚，并返回逐项结果。"
+      >
+        <div id="batch-governance" className="batch-panel">
+          <div className="chip-row">
+            <span className="status-pill status-pill-blue">
+              可批量发布 {overview.batchCandidates.publish.entities.length + overview.batchCandidates.publish.fields.length + overview.batchCandidates.publish.pages.length} 项
+            </span>
+            <span className="status-pill status-pill-amber">
+              可批量回滚 {overview.batchCandidates.rollback.entities.length + overview.batchCandidates.rollback.fields.length + overview.batchCandidates.rollback.pages.length} 项
+            </span>
+          </div>
+
+          {batchFeedback ? (
+            <div className="batch-feedback-card">
+              <div className="batch-feedback-summary">
+                <div className="table-cell-stack">
+                  <strong>
+                    {batchFeedback.action === "publish" ? "批量发布结果" : "批量回滚结果"}
+                  </strong>
+                  <span className="muted">{batchFeedback.createdAt}</span>
+                </div>
+                <div className="chip-row">
+                  <span className="status-pill status-pill-blue">
+                    共 {batchFeedback.summary.total} 项
+                  </span>
+                  <span className="status-pill status-pill-green">
+                    成功 {batchFeedback.summary.successCount} 项
+                  </span>
+                  <span className="status-pill status-pill-red">
+                    失败 {batchFeedback.summary.failedCount} 项
+                  </span>
+                </div>
+              </div>
+
+              <ul className="timeline-list">
+                {batchFeedback.items.map((item) => (
+                  <li key={`${batchFeedback.id}-${item.ref}`}>
+                    <span className="timeline-title">
+                      {item.label} · <span className={getBatchResultClassName(item.ok)}>{item.ok ? "成功" : "失败"}</span>
+                    </span>
+                    <span className="muted">
+                      {item.targetType} · {item.message}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="two-col-grid">
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>批量发布</strong>
+                <span className="muted">
+                  适用于草稿或停用中的实体、字段、页面版本。仍会执行单对象发布校验，失败项不会阻塞其他对象。
+                </span>
+              </div>
+
+              <form className="action-stack" action="/api/meta/batch-versions" method="post">
+                <input type="hidden" name="action" value="publish" />
+                <input type="hidden" name="redirectTo" value={redirectTo} />
+                <label className="form-field">
+                  <span className="field-label">批量发布备注</span>
+                  <input
+                    className="text-input"
+                    name="note"
+                    placeholder="本次发布说明，可选"
+                  />
+                </label>
+
+                <BatchCandidateChecklist
+                  title="实体候选集"
+                  description="仅展示当前未发布的实体。"
+                  items={overview.batchCandidates.publish.entities}
+                />
+                <BatchCandidateChecklist
+                  title="字段候选集"
+                  description="仅展示当前未发布的字段。"
+                  items={overview.batchCandidates.publish.fields}
+                />
+                <BatchCandidateChecklist
+                  title="页面候选集"
+                  description="仅展示当前未发布的页面版本。"
+                  items={overview.batchCandidates.publish.pages}
+                />
+
+                <button type="submit" className="button-primary">
+                  执行批量发布
+                </button>
+              </form>
+            </div>
+
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>批量回滚</strong>
+                <span className="muted">
+                  实体和字段回滚基于快照，页面回滚基于历史版本。回滚原因必填，所有动作都会写入审计日志。
+                </span>
+              </div>
+
+              <form className="action-stack" action="/api/meta/batch-versions" method="post">
+                <input type="hidden" name="action" value="rollback" />
+                <input type="hidden" name="redirectTo" value={redirectTo} />
+                <label className="form-field">
+                  <span className="field-label">批量回滚原因</span>
+                  <input
+                    className="text-input"
+                    name="reason"
+                    placeholder="例如：线上配置异常，回退到稳定版本"
+                    required
+                  />
+                </label>
+
+                <BatchCandidateChecklist
+                  title="实体快照候选集"
+                  description="仅展示与当前版本不同的历史快照。"
+                  items={overview.batchCandidates.rollback.entities}
+                />
+                <BatchCandidateChecklist
+                  title="字段快照候选集"
+                  description="仅展示与当前版本不同的历史快照。"
+                  items={overview.batchCandidates.rollback.fields}
+                />
+                <BatchCandidateChecklist
+                  title="页面历史版本候选集"
+                  description="仅展示当前线上版本之外的历史页面版本。"
+                  items={overview.batchCandidates.rollback.pages}
+                />
+
+                <button type="submit" className="button-danger">
+                  执行批量回滚
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
         eyebrow="版本治理"
         title="页面发布、克隆与回滚"
         description="当前按“实体 + 页面编码”作为一个版本组进行治理。发布会自动替换当前线上版本，回滚会重新激活旧版本。"
@@ -982,7 +1366,9 @@ prisma/
                     </span>
                     <span className="muted">
                       引用页面 {overview.preview.fieldDependencies?.pageCount ?? 0} 份，其中已发布{" "}
-                      {overview.preview.fieldDependencies?.publishedPageCount ?? 0} 份；快照{" "}
+                      {overview.preview.fieldDependencies?.publishedPageCount ?? 0} 份；规则引用{" "}
+                      {overview.preview.fieldDependencies?.ruleCount ?? 0} 份，其中活跃规则{" "}
+                      {overview.preview.fieldDependencies?.activeRuleCount ?? 0} 份；快照{" "}
                       {overview.preview.fieldDependencies?.snapshotCount ?? 0} 条
                     </span>
                   </div>
@@ -1004,14 +1390,22 @@ prisma/
 
                 <div className="table-cell-stack">
                   <strong>依赖分析</strong>
-                  {overview.fieldDependencyItems.length > 0 ? (
-                    overview.fieldDependencyItems.map((item) => (
-                      <span key={item.id} className="muted">
-                        {item.pageCode} · v{item.version} · {item.status} · {item.schemaPreview}
-                      </span>
-                    ))
+                  {overview.fieldDependencyItems.length > 0 ||
+                  overview.ruleDependencyItems.length > 0 ? (
+                    [...overview.fieldDependencyItems, ...overview.ruleDependencyItems].map((item) => {
+                      const text =
+                        "pageCode" in item
+                          ? `${item.pageCode} · v${item.version} · ${item.status} · ${item.schemaPreview}`
+                          : `${item.ruleCode} · v${item.version} · ${item.status} · ${item.scene} · ${item.fieldSummary} · ${item.nodeSummary}${item.isActive ? " · 活跃版本" : ""}`;
+
+                      return (
+                        <span key={item.id} className="muted">
+                          {text}
+                        </span>
+                      );
+                    })
                   ) : (
-                    <span className="muted">当前字段尚未被任何页面 Schema 引用，可安全删除。</span>
+                    <span className="muted">当前字段尚未被页面或规则引用，可安全删除。</span>
                   )}
                 </div>
 

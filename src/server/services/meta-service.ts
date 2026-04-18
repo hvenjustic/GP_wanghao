@@ -1,6 +1,7 @@
 import { Prisma, RecordStatus } from "@prisma/client";
 import { hasPermission, type AuthSession } from "@/lib/auth/types";
 import { prisma } from "@/lib/db/prisma";
+import { normalizeRuleGraph } from "@/features/rules/lib/rule-graph";
 import { createAuditLog } from "@/server/services/audit-service";
 
 type ActionResult = {
@@ -83,6 +84,35 @@ type MetaFieldVersionActionInput = {
   };
 };
 
+export type MetaBatchVersionAction = "publish" | "rollback";
+
+type MetaBatchVersionActionInput = {
+  action: MetaBatchVersionAction;
+  session: AuthSession;
+  payload: {
+    targetRefs: string[];
+    note?: string;
+    reason?: string;
+  };
+};
+
+export type MetaBatchVersionItemResult = {
+  ref: string;
+  targetType: "ENTITY_META" | "FIELD_META" | "PAGE_META";
+  label: string;
+  ok: boolean;
+  message: string;
+};
+
+export type MetaBatchVersionResult = ActionResult & {
+  summary: {
+    total: number;
+    successCount: number;
+    failedCount: number;
+  };
+  items: MetaBatchVersionItemResult[];
+};
+
 type MetaOverviewSelection = {
   entityPreviewId?: string;
   pagePreviewId?: string;
@@ -100,6 +130,46 @@ type MetaDiffEntry = {
   before: string;
   after: string;
 };
+
+type RuleFieldReferenceItem = {
+  ruleId: string;
+  versionId: string;
+  ruleCode: string;
+  ruleName: string;
+  scene: string;
+  definitionStatus: string;
+  version: number;
+  isActive: boolean;
+  referencedFields: string[];
+  nodeLabels: string[];
+};
+
+type MetaBatchTargetRef =
+  | {
+      kind: "entity";
+      entityId: string;
+      ref: string;
+    }
+  | {
+      kind: "field";
+      fieldId: string;
+      ref: string;
+    }
+  | {
+      kind: "page";
+      pageId: string;
+      ref: string;
+    }
+  | {
+      kind: "entity-snapshot";
+      snapshotId: string;
+      ref: string;
+    }
+  | {
+      kind: "field-snapshot";
+      snapshotId: string;
+      ref: string;
+    };
 
 export const recordStatusOptions: RecordStatus[] = [
   RecordStatus.DRAFT,
@@ -248,6 +318,62 @@ function formatDiffPath(basePath: string, key: string | number, useBracket = fal
   return basePath ? `${basePath}.${key}` : String(key);
 }
 
+function parseMetaBatchTargetRef(value: string): MetaBatchTargetRef | null {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (trimmedValue.startsWith("entity:")) {
+    const entityId = trimmedValue.slice("entity:".length).trim();
+    return entityId ? { kind: "entity", entityId, ref: trimmedValue } : null;
+  }
+
+  if (trimmedValue.startsWith("field:")) {
+    const fieldId = trimmedValue.slice("field:".length).trim();
+    return fieldId ? { kind: "field", fieldId, ref: trimmedValue } : null;
+  }
+
+  if (trimmedValue.startsWith("page:")) {
+    const pageId = trimmedValue.slice("page:".length).trim();
+    return pageId ? { kind: "page", pageId, ref: trimmedValue } : null;
+  }
+
+  if (trimmedValue.startsWith("entity-snapshot:")) {
+    const snapshotId = trimmedValue.slice("entity-snapshot:".length).trim();
+    return snapshotId ? { kind: "entity-snapshot", snapshotId, ref: trimmedValue } : null;
+  }
+
+  if (trimmedValue.startsWith("field-snapshot:")) {
+    const snapshotId = trimmedValue.slice("field-snapshot:".length).trim();
+    return snapshotId ? { kind: "field-snapshot", snapshotId, ref: trimmedValue } : null;
+  }
+
+  return null;
+}
+
+function buildMetaBatchActionMessage(
+  action: MetaBatchVersionAction,
+  summary: MetaBatchVersionResult["summary"]
+) {
+  const actionLabel = action === "publish" ? "批量发布" : "批量回滚";
+
+  if (summary.total === 0) {
+    return `${actionLabel}未执行。`;
+  }
+
+  if (summary.failedCount === 0) {
+    return `${actionLabel}完成：共 ${summary.total} 项，全部成功。`;
+  }
+
+  if (summary.successCount === 0) {
+    return `${actionLabel}失败：共 ${summary.total} 项，全部失败。`;
+  }
+
+  return `${actionLabel}完成：成功 ${summary.successCount} 项，失败 ${summary.failedCount} 项。`;
+}
+
 function isDiffRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -314,6 +440,89 @@ function summarizeDiffEntries(entries: MetaDiffEntry[]) {
     removedCount: entries.filter((entry) => entry.kind === "REMOVED").length,
     changedCount: entries.filter((entry) => entry.kind === "CHANGED").length
   };
+}
+
+function parseDateLike(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseRulePublishInfo(value: Prisma.JsonValue | null | undefined) {
+  if (!isJsonRecord(value)) {
+    return null;
+  }
+
+  const publishedAtRaw = typeof value.publishedAt === "string" ? value.publishedAt : "";
+  const publishedAt = parseDateLike(publishedAtRaw);
+
+  return {
+    publishedAt,
+    publishedBy: typeof value.publishedBy === "string" ? value.publishedBy : "系统"
+  };
+}
+
+function getActiveRuleVersionId(
+  versions: Array<{
+    id: string;
+    version: number;
+    publishInfo: Prisma.JsonValue | null;
+  }>
+) {
+  const activations = versions
+    .map((version) => ({
+      id: version.id,
+      version: version.version,
+      publishInfo: parseRulePublishInfo(version.publishInfo)
+    }))
+    .filter((item) => item.publishInfo?.publishedAt);
+
+  if (activations.length === 0) {
+    return null;
+  }
+
+  activations.sort((left, right) => {
+    const leftTime = left.publishInfo?.publishedAt?.getTime() ?? 0;
+    const rightTime = right.publishInfo?.publishedAt?.getTime() ?? 0;
+
+    if (rightTime !== leftTime) {
+      return rightTime - leftTime;
+    }
+
+    return right.version - left.version;
+  });
+
+  return activations[0]?.id ?? null;
+}
+
+function collectRuleConfigFieldRefs(value: Prisma.JsonValue | null | undefined, refs: Set<string>) {
+  if (!value) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectRuleConfigFieldRefs(item, refs);
+    }
+
+    return;
+  }
+
+  if (!isJsonRecord(value)) {
+    return;
+  }
+
+  if (typeof value.field === "string") {
+    refs.add(value.field);
+  }
+
+  for (const item of Object.values(value)) {
+    collectRuleConfigFieldRefs(item ?? null, refs);
+  }
 }
 
 async function getNextSnapshotVersion(targetType: string, targetId: string) {
@@ -546,7 +755,7 @@ async function getFieldDependencies(fieldId: string) {
     return null;
   }
 
-  const [pages, snapshots] = await Promise.all([
+  const [pages, snapshots, ruleReferences] = await Promise.all([
     prisma.pageMeta.findMany({
       where: {
         entityId: field.entityId
@@ -558,17 +767,270 @@ async function getFieldDependencies(fieldId: string) {
         targetType: "FIELD_META",
         targetId: field.id
       }
-    })
+    }),
+    getRuleReferencesForFieldCodes([field.fieldCode])
   ]);
 
   const matchedPages = pages.filter((page) => jsonContainsString(page.schema, field.fieldCode));
+  const matchedRules = ruleReferences[field.fieldCode] ?? [];
 
   return {
     field,
     pages: matchedPages,
+    rules: matchedRules,
     pageCount: matchedPages.length,
     publishedPageCount: matchedPages.filter((page) => page.status === RecordStatus.PUBLISHED).length,
+    ruleCount: matchedRules.length,
+    activeRuleCount: matchedRules.filter((item) => item.isActive).length,
     snapshotCount: snapshots
+  };
+}
+
+async function getRuleReferencesForFieldCodes(fieldCodes: string[]) {
+  const normalizedCodes = Array.from(
+    new Set(fieldCodes.filter((code) => typeof code === "string" && code.trim()))
+  );
+  const referenceMap: Record<string, RuleFieldReferenceItem[]> = Object.fromEntries(
+    normalizedCodes.map((code) => [code, []])
+  );
+
+  if (normalizedCodes.length === 0) {
+    return referenceMap;
+  }
+
+  const definitions = await prisma.ruleDefinition.findMany({
+    include: {
+      versions: {
+        orderBy: {
+          version: "desc"
+        }
+      }
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+
+  for (const definition of definitions) {
+    const activeVersionId = getActiveRuleVersionId(definition.versions);
+
+    for (const version of definition.versions) {
+      const graph = normalizeRuleGraph(version.graph, definition.scene);
+      const refs = new Set<string>();
+
+      for (const node of graph.nodes) {
+        collectRuleConfigFieldRefs(node.data.config as Prisma.JsonValue | undefined, refs);
+      }
+
+      const matchedFieldCodes = Array.from(refs).filter((fieldCode) =>
+        normalizedCodes.includes(fieldCode)
+      );
+
+      if (matchedFieldCodes.length === 0) {
+        continue;
+      }
+
+      const referenceItem = {
+        ruleId: definition.id,
+        versionId: version.id,
+        ruleCode: definition.ruleCode,
+        ruleName: definition.name,
+        scene: definition.scene,
+        definitionStatus: definition.status,
+        version: version.version,
+        isActive: version.id === activeVersionId,
+        referencedFields: matchedFieldCodes,
+        nodeLabels: graph.nodes
+          .filter((node) => {
+            const nodeRefs = new Set<string>();
+            collectRuleConfigFieldRefs(node.data.config as Prisma.JsonValue | undefined, nodeRefs);
+            return Array.from(nodeRefs).some((fieldCode) => matchedFieldCodes.includes(fieldCode));
+          })
+          .map((node) => node.data.label)
+      } satisfies RuleFieldReferenceItem;
+
+      for (const fieldCode of matchedFieldCodes) {
+        referenceMap[fieldCode]?.push(referenceItem);
+      }
+    }
+  }
+
+  return referenceMap;
+}
+
+async function getEntityDependencyTopology(entityId: string) {
+  const entity = await prisma.entityMeta.findUnique({
+    where: {
+      id: entityId
+    },
+    include: {
+      fields: {
+        orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+      },
+      pages: {
+        orderBy: [{ pageCode: "asc" }, { version: "desc" }]
+      }
+    }
+  });
+
+  if (!entity) {
+    return null;
+  }
+
+  const fieldCodes = entity.fields.map((field) => field.fieldCode);
+  const ruleReferenceMap = await getRuleReferencesForFieldCodes(fieldCodes);
+  const fieldItems = entity.fields.map((field) => {
+    const matchedPages = entity.pages.filter((page) => jsonContainsString(page.schema, field.fieldCode));
+    const matchedRules = ruleReferenceMap[field.fieldCode] ?? [];
+
+    return {
+      id: field.id,
+      fieldCode: field.fieldCode,
+      name: field.name,
+      status: field.status,
+      version: field.version,
+      pageRefCount: matchedPages.length,
+      publishedPageRefCount: matchedPages.filter((page) => page.status === RecordStatus.PUBLISHED)
+        .length,
+      ruleRefCount: matchedRules.length,
+      activeRuleRefCount: matchedRules.filter((item) => item.isActive).length
+    };
+  });
+  const pageItems = entity.pages.map((page) => {
+    const matchedFieldCodes = fieldCodes.filter((fieldCode) => jsonContainsString(page.schema, fieldCode));
+
+    return {
+      id: page.id,
+      pageCode: page.pageCode,
+      pageType: page.pageType,
+      version: page.version,
+      status: page.status,
+      matchedFieldCodes
+    };
+  });
+  const ruleItems = Object.values(ruleReferenceMap)
+    .flat()
+    .reduce<Map<string, RuleFieldReferenceItem>>((accumulator, item) => {
+      const current = accumulator.get(item.versionId);
+
+      if (!current) {
+        accumulator.set(item.versionId, item);
+        return accumulator;
+      }
+
+      accumulator.set(item.versionId, {
+        ...current,
+        referencedFields: Array.from(
+          new Set([...current.referencedFields, ...item.referencedFields])
+        ),
+        nodeLabels: Array.from(new Set([...current.nodeLabels, ...item.nodeLabels]))
+      });
+
+      return accumulator;
+    }, new Map<string, RuleFieldReferenceItem>());
+  const uniqueRuleItems = Array.from(ruleItems.values()).sort((left, right) => {
+    if (left.ruleCode !== right.ruleCode) {
+      return left.ruleCode.localeCompare(right.ruleCode);
+    }
+
+    return right.version - left.version;
+  });
+
+  const nodes = [
+    {
+      id: entity.id,
+      type: "entity",
+      label: `${entity.entityCode} · ${entity.name}`,
+      status: entity.status,
+      detail: `字段 ${entity.fields.length} 个 · 页面 ${entity.pages.length} 份`
+    },
+    ...fieldItems.map((field) => ({
+      id: field.id,
+      type: "field",
+      label: `${field.fieldCode} · ${field.name}`,
+      status: field.status,
+      detail: `页面引用 ${field.pageRefCount} 次 · 规则引用 ${field.ruleRefCount} 次`
+    })),
+    ...pageItems.map((page) => ({
+      id: page.id,
+      type: "page",
+      label: `${page.pageCode} · v${page.version}`,
+      status: page.status,
+      detail: `${page.pageType} · 引用字段 ${page.matchedFieldCodes.length} 个`
+    })),
+    ...uniqueRuleItems.map((rule) => ({
+      id: rule.versionId,
+      type: "rule",
+      label: `${rule.ruleCode} · v${rule.version}`,
+      status: rule.definitionStatus,
+      detail: `${rule.scene} · 引用字段 ${rule.referencedFields.length} 个`
+    }))
+  ];
+  const edges = [
+    ...fieldItems.map((field) => ({
+      id: `${entity.id}-${field.id}`,
+      sourceId: entity.id,
+      targetId: field.id,
+      label: "包含字段",
+      kind: "ENTITY_FIELD"
+    })),
+    ...pageItems.map((page) => ({
+      id: `${entity.id}-${page.id}`,
+      sourceId: entity.id,
+      targetId: page.id,
+      label: "页面配置",
+      kind: "ENTITY_PAGE"
+    })),
+    ...pageItems.flatMap((page) =>
+      page.matchedFieldCodes.map((fieldCode) => {
+        const field = entity.fields.find((item) => item.fieldCode === fieldCode);
+
+        return {
+          id: `${field?.id ?? fieldCode}-${page.id}`,
+          sourceId: field?.id ?? fieldCode,
+          targetId: page.id,
+          label: "页面引用",
+          kind: "FIELD_PAGE"
+        };
+      })
+    ),
+    ...uniqueRuleItems.flatMap((rule) =>
+      rule.referencedFields.map((fieldCode) => {
+        const field = entity.fields.find((item) => item.fieldCode === fieldCode);
+
+        return {
+          id: `${field?.id ?? fieldCode}-${rule.versionId}`,
+          sourceId: field?.id ?? fieldCode,
+          targetId: rule.versionId,
+          label: "规则引用",
+          kind: "FIELD_RULE"
+        };
+      })
+    )
+  ];
+
+  return {
+    entity: {
+      id: entity.id,
+      entityCode: entity.entityCode,
+      name: entity.name,
+      status: entity.status,
+      version: entity.version
+    },
+    fieldItems,
+    pageItems,
+    ruleItems: uniqueRuleItems,
+    nodes,
+    edges,
+    summary: {
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      fieldCount: fieldItems.length,
+      pageCount: pageItems.length,
+      ruleCount: uniqueRuleItems.length,
+      pageReferenceCount: edges.filter((edge) => edge.kind === "FIELD_PAGE").length,
+      ruleReferenceCount: edges.filter((edge) => edge.kind === "FIELD_RULE").length
+    }
   };
 }
 
@@ -630,7 +1092,7 @@ function parseSchemaText(schemaText: string, required: boolean) {
 export async function getMetaManagementOverview(
   selection: MetaOverviewSelection = {}
 ) {
-  const [entities, fields, pages, releaseLogs] = await Promise.all([
+  const [entities, fields, pages, releaseLogs, entitySnapshots, fieldSnapshots] = await Promise.all([
     prisma.entityMeta.findMany({
       include: {
         _count: {
@@ -676,6 +1138,18 @@ export async function getMetaManagementOverview(
         createdAt: "desc"
       },
       take: 12
+    }),
+    prisma.metaConfigSnapshot.findMany({
+      where: {
+        targetType: "ENTITY_META"
+      },
+      orderBy: [{ targetCode: "asc" }, { version: "desc" }]
+    }),
+    prisma.metaConfigSnapshot.findMany({
+      where: {
+        targetType: "FIELD_META"
+      },
+      orderBy: [{ targetCode: "asc" }, { version: "desc" }]
     })
   ]);
 
@@ -770,6 +1244,74 @@ export async function getMetaManagementOverview(
       };
     })
     .sort((left, right) => left.entityCode.localeCompare(right.entityCode));
+  const entityItemById = new Map(entityItems.map((item) => [item.id, item]));
+  const fieldItemById = new Map(fieldItems.map((item) => [item.id, item]));
+  const batchPublishEntityCandidates = entityItems
+    .filter((item) => item.status !== RecordStatus.PUBLISHED)
+    .map((item) => ({
+      ref: `entity:${item.id}`,
+      label: `${item.entityCode} · 当前 v${item.version}`,
+      description: `${item.name} · ${item.status} · 字段 ${item.fieldCount} 个 / 页面 ${item.pageCount} 份`
+    }));
+  const batchPublishFieldCandidates = fieldItems
+    .filter((item) => item.status !== RecordStatus.PUBLISHED)
+    .map((item) => ({
+      ref: `field:${item.id}`,
+      label: `${item.entityCode}.${item.fieldCode} · 当前 v${item.version}`,
+      description: `${item.name} · ${item.type} · ${item.status}${item.required ? " · 必填" : ""}`
+    }));
+  const batchPublishPageCandidates = pageItems
+    .filter((item) => item.status !== RecordStatus.PUBLISHED)
+    .map((item) => ({
+      ref: `page:${item.id}`,
+      label: `${item.entityCode}.${item.pageCode} · v${item.version}`,
+      description: `${item.pageType} · ${item.status} · ${item.schemaPreview}`
+    }));
+  const batchRollbackEntityCandidates = entitySnapshots
+    .map((snapshot) => {
+      const currentEntity = entityItemById.get(snapshot.targetId);
+
+      if (!currentEntity || currentEntity.version === snapshot.version) {
+        return null;
+      }
+
+      return {
+        ref: `entity-snapshot:${snapshot.id}`,
+        label: `${currentEntity.entityCode} · 回滚到快照 v${snapshot.version}`,
+        description: `当前 v${currentEntity.version} · 目标状态 ${snapshot.status ?? "-"} · ${formatDateTime(snapshot.createdAt)}`
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const batchRollbackFieldCandidates = fieldSnapshots
+    .map((snapshot) => {
+      const currentField = fieldItemById.get(snapshot.targetId);
+
+      if (!currentField || currentField.version === snapshot.version) {
+        return null;
+      }
+
+      return {
+        ref: `field-snapshot:${snapshot.id}`,
+        label: `${currentField.entityCode}.${currentField.fieldCode} · 回滚到快照 v${snapshot.version}`,
+        description: `当前 v${currentField.version} · 目标状态 ${snapshot.status ?? "-"} · ${formatDateTime(snapshot.createdAt)}`
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const batchRollbackPageCandidates = pageGroups.flatMap((group) => {
+    const publishedVersion = group.versions.find((item) => item.status === RecordStatus.PUBLISHED);
+
+    if (!publishedVersion) {
+      return [];
+    }
+
+    return group.versions
+      .filter((version) => version.id !== publishedVersion.id)
+      .map((version) => ({
+        ref: `page:${version.id}`,
+        label: `${group.entityCode}.${group.pageCode} · 回滚到 v${version.version}`,
+        description: `当前线上 v${publishedVersion.version} · ${version.pageType} · ${version.status}`
+      }));
+  });
 
   const previewEntity =
     entityItems.find((item) => item.id === selection.entityPreviewId) ??
@@ -806,11 +1348,13 @@ export async function getMetaManagementOverview(
   const [
     previewEntityDependencies,
     previewFieldDependencies,
+    previewEntityTopology,
     previewEntitySnapshots,
     previewFieldSnapshots
   ] = await Promise.all([
     previewEntity ? getEntityDependencies(previewEntity.id) : null,
     previewField ? getFieldDependencies(previewField.id) : null,
+    previewEntity ? getEntityDependencyTopology(previewEntity.id) : null,
     previewEntity
       ? prisma.metaConfigSnapshot.findMany({
           where: {
@@ -881,11 +1425,25 @@ export async function getMetaManagementOverview(
   const previewFieldDependencyItems =
     previewFieldDependencies?.pages.map((page) => ({
       id: page.id,
+      targetType: "PAGE",
       pageCode: page.pageCode,
       pageType: page.pageType,
       version: page.version,
       status: page.status,
       schemaPreview: previewSchema(page.schema)
+    })) ?? [];
+  const previewRuleDependencyItems =
+    previewFieldDependencies?.rules.map((rule) => ({
+      id: rule.versionId,
+      targetType: "RULE",
+      ruleCode: rule.ruleCode,
+      ruleName: rule.ruleName,
+      scene: rule.scene,
+      version: rule.version,
+      status: rule.definitionStatus,
+      nodeSummary: rule.nodeLabels.join(" / "),
+      fieldSummary: rule.referencedFields.join(" / "),
+      isActive: rule.isActive
     })) ?? [];
   const entitySnapshotItems = previewEntitySnapshots.map((snapshot) => ({
     id: snapshot.id,
@@ -984,6 +1542,18 @@ export async function getMetaManagementOverview(
     fields: fieldItems,
     pages: pageItems,
     pageGroups,
+    batchCandidates: {
+      publish: {
+        entities: batchPublishEntityCandidates,
+        fields: batchPublishFieldCandidates,
+        pages: batchPublishPageCandidates
+      },
+      rollback: {
+        entities: batchRollbackEntityCandidates,
+        fields: batchRollbackFieldCandidates,
+        pages: batchRollbackPageCandidates
+      }
+    },
     preview: {
       entity: previewEntity,
       fields: previewFields,
@@ -993,11 +1563,13 @@ export async function getMetaManagementOverview(
       pageGroup: previewPageGroup,
       readyChecks: entityReadyChecks,
       entityDependencies: previewEntityDependencies,
-      fieldDependencies: previewFieldDependencies
+      fieldDependencies: previewFieldDependencies,
+      topology: previewEntityTopology
     },
     entitySnapshots: entitySnapshotItems,
     fieldSnapshots: fieldSnapshotItems,
     fieldDependencyItems: previewFieldDependencyItems,
+    ruleDependencyItems: previewRuleDependencyItems,
     releaseHistory,
     diffs: {
       entity: previewEntityRecord
@@ -1355,6 +1927,13 @@ export async function performMetaFieldAction(
       return {
         ok: false,
         message: `字段 ${field.fieldCode} 已被 ${dependencies?.pageCount ?? 0} 份页面配置引用，不能直接删除。`
+      };
+    }
+
+    if ((dependencies?.ruleCount ?? 0) > 0) {
+      return {
+        ok: false,
+        message: `字段 ${field.fieldCode} 已被 ${dependencies?.ruleCount ?? 0} 个规则版本引用，不能直接删除。`
       };
     }
 
@@ -2473,5 +3052,382 @@ export async function performMetaPageVersionAction(
   return {
     ok: true,
     message: `已回滚到 ${page.pageCode} v${page.version}。`
+  };
+}
+
+export async function performMetaBatchVersionAction(
+  input: MetaBatchVersionActionInput
+): Promise<MetaBatchVersionResult> {
+  if (!hasPermission(input.session, "meta:manage")) {
+    return {
+      ok: false,
+      message: "当前账号没有管理低代码配置的权限。",
+      summary: {
+        total: 0,
+        successCount: 0,
+        failedCount: 0
+      },
+      items: []
+    };
+  }
+
+  const targetRefs = Array.from(
+    new Set(
+      input.payload.targetRefs
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (targetRefs.length === 0) {
+    return {
+      ok: false,
+      message: "请至少选择一个批量治理对象。",
+      summary: {
+        total: 0,
+        successCount: 0,
+        failedCount: 0
+      },
+      items: []
+    };
+  }
+
+  if (input.action === "rollback" && !(input.payload.reason?.trim() ?? "")) {
+    return {
+      ok: false,
+      message: "执行批量回滚时必须填写回滚原因。",
+      summary: {
+        total: targetRefs.length,
+        successCount: 0,
+        failedCount: targetRefs.length
+      },
+      items: targetRefs.map((ref) => ({
+        ref,
+        targetType: "PAGE_META",
+        label: ref,
+        ok: false,
+        message: "未填写回滚原因。"
+      }))
+    };
+  }
+
+  const items: MetaBatchVersionItemResult[] = [];
+
+  for (const ref of targetRefs) {
+    const parsedTarget = parseMetaBatchTargetRef(ref);
+
+    if (!parsedTarget) {
+      items.push({
+        ref,
+        targetType: "PAGE_META",
+        label: ref,
+        ok: false,
+        message: "目标引用格式无效。"
+      });
+      continue;
+    }
+
+    if (input.action === "publish") {
+      if (parsedTarget.kind === "entity") {
+        const entity = await prisma.entityMeta.findUnique({
+          where: {
+            id: parsedTarget.entityId
+          }
+        });
+
+        if (!entity) {
+          items.push({
+            ref,
+            targetType: "ENTITY_META",
+            label: parsedTarget.entityId,
+            ok: false,
+            message: "目标实体不存在。"
+          });
+          continue;
+        }
+
+        const result = await performMetaEntityVersionAction({
+          action: "publish",
+          session: input.session,
+          payload: {
+            entityId: entity.id,
+            note: input.payload.note
+          }
+        });
+
+        items.push({
+          ref,
+          targetType: "ENTITY_META",
+          label: `${entity.entityCode} · 当前 v${entity.version}`,
+          ok: result.ok,
+          message: result.message
+        });
+        continue;
+      }
+
+      if (parsedTarget.kind === "field") {
+        const field = await prisma.fieldMeta.findUnique({
+          where: {
+            id: parsedTarget.fieldId
+          },
+          include: {
+            entity: true
+          }
+        });
+
+        if (!field) {
+          items.push({
+            ref,
+            targetType: "FIELD_META",
+            label: parsedTarget.fieldId,
+            ok: false,
+            message: "目标字段不存在。"
+          });
+          continue;
+        }
+
+        const result = await performMetaFieldVersionAction({
+          action: "publish",
+          session: input.session,
+          payload: {
+            fieldId: field.id,
+            note: input.payload.note
+          }
+        });
+
+        items.push({
+          ref,
+          targetType: "FIELD_META",
+          label: `${field.entity.entityCode}.${field.fieldCode} · 当前 v${field.version}`,
+          ok: result.ok,
+          message: result.message
+        });
+        continue;
+      }
+
+      if (parsedTarget.kind === "page") {
+        const page = await prisma.pageMeta.findUnique({
+          where: {
+            id: parsedTarget.pageId
+          },
+          include: {
+            entity: true
+          }
+        });
+
+        if (!page) {
+          items.push({
+            ref,
+            targetType: "PAGE_META",
+            label: parsedTarget.pageId,
+            ok: false,
+            message: "目标页面版本不存在。"
+          });
+          continue;
+        }
+
+        const result = await performMetaPageVersionAction({
+          action: "publish",
+          session: input.session,
+          payload: {
+            pageId: page.id,
+            note: input.payload.note
+          }
+        });
+
+        items.push({
+          ref,
+          targetType: "PAGE_META",
+          label: `${page.entity.entityCode}.${page.pageCode} · v${page.version}`,
+          ok: result.ok,
+          message: result.message
+        });
+        continue;
+      }
+
+      items.push({
+        ref,
+        targetType: parsedTarget.kind === "entity-snapshot" ? "ENTITY_META" : "FIELD_META",
+        label: ref,
+        ok: false,
+        message: "批量发布只支持实体、字段和页面的当前版本。"
+      });
+      continue;
+    }
+
+    if (parsedTarget.kind === "entity-snapshot") {
+      const snapshot = await prisma.metaConfigSnapshot.findUnique({
+        where: {
+          id: parsedTarget.snapshotId
+        }
+      });
+
+      if (!snapshot || snapshot.targetType !== "ENTITY_META") {
+        items.push({
+          ref,
+          targetType: "ENTITY_META",
+          label: parsedTarget.snapshotId,
+          ok: false,
+          message: "目标实体快照不存在。"
+        });
+        continue;
+      }
+
+      const entity = await prisma.entityMeta.findUnique({
+        where: {
+          id: snapshot.targetId
+        }
+      });
+
+      if (!entity) {
+        items.push({
+          ref,
+          targetType: "ENTITY_META",
+          label: snapshot.targetCode,
+          ok: false,
+          message: "目标实体不存在。"
+        });
+        continue;
+      }
+
+      const result = await performMetaEntityVersionAction({
+        action: "rollback",
+        session: input.session,
+        payload: {
+          entityId: entity.id,
+          snapshotId: snapshot.id,
+          reason: input.payload.reason
+        }
+      });
+
+      items.push({
+        ref,
+        targetType: "ENTITY_META",
+        label: `${entity.entityCode} · 快照 v${snapshot.version}`,
+        ok: result.ok,
+        message: result.message
+      });
+      continue;
+    }
+
+    if (parsedTarget.kind === "field-snapshot") {
+      const snapshot = await prisma.metaConfigSnapshot.findUnique({
+        where: {
+          id: parsedTarget.snapshotId
+        }
+      });
+
+      if (!snapshot || snapshot.targetType !== "FIELD_META") {
+        items.push({
+          ref,
+          targetType: "FIELD_META",
+          label: parsedTarget.snapshotId,
+          ok: false,
+          message: "目标字段快照不存在。"
+        });
+        continue;
+      }
+
+      const field = await prisma.fieldMeta.findUnique({
+        where: {
+          id: snapshot.targetId
+        },
+        include: {
+          entity: true
+        }
+      });
+
+      if (!field) {
+        items.push({
+          ref,
+          targetType: "FIELD_META",
+          label: snapshot.targetCode,
+          ok: false,
+          message: "目标字段不存在。"
+        });
+        continue;
+      }
+
+      const result = await performMetaFieldVersionAction({
+        action: "rollback",
+        session: input.session,
+        payload: {
+          fieldId: field.id,
+          snapshotId: snapshot.id,
+          reason: input.payload.reason
+        }
+      });
+
+      items.push({
+        ref,
+        targetType: "FIELD_META",
+        label: `${field.entity.entityCode}.${field.fieldCode} · 快照 v${snapshot.version}`,
+        ok: result.ok,
+        message: result.message
+      });
+      continue;
+    }
+
+    if (parsedTarget.kind === "page") {
+      const page = await prisma.pageMeta.findUnique({
+        where: {
+          id: parsedTarget.pageId
+        },
+        include: {
+          entity: true
+        }
+      });
+
+      if (!page) {
+        items.push({
+          ref,
+          targetType: "PAGE_META",
+          label: parsedTarget.pageId,
+          ok: false,
+          message: "目标页面版本不存在。"
+        });
+        continue;
+      }
+
+      const result = await performMetaPageVersionAction({
+        action: "rollback",
+        session: input.session,
+        payload: {
+          pageId: page.id,
+          reason: input.payload.reason
+        }
+      });
+
+      items.push({
+        ref,
+        targetType: "PAGE_META",
+        label: `${page.entity.entityCode}.${page.pageCode} · v${page.version}`,
+        ok: result.ok,
+        message: result.message
+      });
+      continue;
+    }
+
+    items.push({
+      ref,
+      targetType: parsedTarget.kind === "entity" ? "ENTITY_META" : "FIELD_META",
+      label: ref,
+      ok: false,
+      message: "批量回滚只支持实体快照、字段快照和页面历史版本。"
+    });
+  }
+
+  const successCount = items.filter((item) => item.ok).length;
+  const summary = {
+    total: items.length,
+    successCount,
+    failedCount: items.length - successCount
+  };
+
+  return {
+    ok: successCount > 0,
+    message: buildMetaBatchActionMessage(input.action, summary),
+    summary,
+    items
   };
 }

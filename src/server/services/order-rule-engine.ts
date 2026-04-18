@@ -136,6 +136,22 @@ function getPublishTime(value: Prisma.JsonValue | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
+function deriveDeliveryPriority(record: OrderRecord) {
+  if (record.tags.some((tag) => ["加急", "极速发货", "优先履约"].includes(tag))) {
+    return "urgent";
+  }
+
+  if (
+    record.tags.some((tag) => ["VIP", "高价值", "会员优先"].includes(tag)) ||
+    record.customerLevel.includes("会员") ||
+    record.customerLevel.toUpperCase().includes("VIP")
+  ) {
+    return "vip";
+  }
+
+  return "normal";
+}
+
 function getOrderFieldValue(record: OrderRecord, payload: OrderRulePayload | undefined, path: string): unknown {
   const context: Record<string, unknown> = {
     orderNo: record.orderNo,
@@ -151,6 +167,7 @@ function getOrderFieldValue(record: OrderRecord, payload: OrderRulePayload | und
     isLocked: record.isLocked,
     isAbnormal: record.isAbnormal,
     tags: record.tags,
+    delivery_priority: deriveDeliveryPriority(record),
     warehouseCode: record.warehouseCode,
     warehouseName: record.warehouseName,
     receiver: record.receiver,

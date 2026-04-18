@@ -582,12 +582,12 @@ const ruleVersions = [
           },
           data: {
             kind: "condition",
-            label: "是否加急订单",
-            detail: "只有加急订单才要求必须走顺丰。",
+            label: "履约优先级是否加急",
+            detail: "只有履约优先级为加急的订单才要求必须走顺丰。",
             config: {
-              field: "tags",
-              operator: "includes",
-              value: "加急"
+              field: "delivery_priority",
+              operator: "eq",
+              value: "urgent"
             }
           }
         },

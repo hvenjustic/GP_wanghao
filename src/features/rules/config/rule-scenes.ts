@@ -74,6 +74,7 @@ export const ruleFieldOptions = [
   "orderNo",
   "sourceChannel",
   "customerLevel",
+  "delivery_priority",
   "amount",
   "paymentStatus",
   "status",
