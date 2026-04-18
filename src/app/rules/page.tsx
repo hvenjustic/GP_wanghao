@@ -53,6 +53,61 @@ function buildRuleHref(ruleId: string, versionId?: string) {
   return `/rules?${query.toString()}`;
 }
 
+function getExampleRuleNarrative(ruleCode: string) {
+  switch (ruleCode) {
+    case "RULE_AUTO_APPROVE":
+      return {
+        title: "审核样例",
+        summary: "低风险订单自动审核通过，直接推进到待分仓。",
+        chain: [
+          "开始节点：声明场景为“订单创建后”",
+          "条件节点：组合表达式校验金额、支付状态、锁单和异常状态",
+          "动作节点：`approve-review + append-tag`",
+          "结果节点：输出“进入待分仓”"
+        ]
+      };
+    case "RULE_WAREHOUSE_PRIORITY":
+      return {
+        title: "分仓样例",
+        summary: "审核通过后按区域分支，把订单路由到华东、华南或默认仓。",
+        chain: [
+          "开始节点：声明场景为“审核通过后”",
+          "分支节点：按 `receiver.province` 路由区域",
+          "动作节点：分别执行 `assign-warehouse` 到目标仓",
+          "结果节点：统一输出分仓结果"
+        ]
+      };
+    case "RULE_SHIPMENT_EXPRESS_GUARD":
+      return {
+        title: "发货前样例",
+        summary: "加急订单进入物流公司分支，不符合顺丰要求时自动锁单，否则直接放行。",
+        chain: [
+          "开始节点：声明场景为“发货前校验”",
+          "条件节点：`expression.group(or)` 判断加急履约",
+          "分支节点：按 `payload.shippingCompany` 路由放行或拦截",
+          "动作节点：`lock-order + mark-abnormal + append-tag + set-note`"
+        ]
+      };
+    case "RULE_MANUAL_RETRY_RECHECK":
+      return {
+        title: "人工重跑样例",
+        summary: "人工处理后重新评估异常和锁单状态，决定继续人工处理还是恢复自动履约。",
+        chain: [
+          "开始节点：声明场景为“人工重跑”",
+          "分支节点：按 `isAbnormal / isLocked / tags` 判断是否仍需人工复核",
+          "动作节点：命中恢复路径时执行 `clear-abnormal + unlock-order + approve-review`",
+          "结果节点：输出“继续人工处理”或“恢复待分仓”"
+        ]
+      };
+    default:
+      return {
+        title: "规则样例",
+        summary: "当前规则可用于演示配置、发布和执行链路。",
+        chain: []
+      };
+  }
+}
+
 export default async function RulesPage({
   searchParams
 }: {
@@ -69,8 +124,14 @@ export default async function RulesPage({
     versionId: selectedVersionId
   });
   const canManage = hasPermission(currentUser, "rules:manage");
-  const shipmentExampleRule =
-    overview.rules.find((rule) => rule.ruleCode === "RULE_SHIPMENT_EXPRESS_GUARD") ?? null;
+  const exampleRules = [
+    "RULE_AUTO_APPROVE",
+    "RULE_WAREHOUSE_PRIORITY",
+    "RULE_SHIPMENT_EXPRESS_GUARD",
+    "RULE_MANUAL_RETRY_RECHECK"
+  ]
+    .map((code) => overview.rules.find((rule) => rule.ruleCode === code) ?? null)
+    .filter((rule): rule is NonNullable<typeof overview.rules[number]> => Boolean(rule));
 
   return (
     <div className="page-grid">
@@ -78,7 +139,7 @@ export default async function RulesPage({
         <div>
           <h1 className="app-header-title">规则编排引擎</h1>
           <p className="app-header-subtitle">
-            当前已经接通数据库、规则版本、试运行日志和可视化画布，并补上了节点配置语义、条件表达式库、多分支执行器和发货前校验示例规则。规则页现在不是占位说明，而是可直接创建、设计、发布、回滚和试运行的第一版工作台。
+            当前已经接通数据库、规则版本、试运行日志和可视化画布，并补上了节点配置语义、条件表达式库、多分支执行器，以及覆盖审核、分仓、发货前、人工重跑的内置样例规则。规则页现在不是占位说明，而是可直接创建、设计、发布、回滚和试运行的第一版工作台。
           </p>
         </div>
         <div className="app-header-meta">
@@ -346,62 +407,56 @@ export default async function RulesPage({
 
       <SectionCard
         eyebrow="示例规则"
-        title="发货前校验示例发布规则"
-        description="种子数据已内置一条已发布的发货前校验规则，用来演示如何通过组合表达式、分支节点和动作节点驱动锁单、异常标记和放行路径。"
+        title="内置业务规则样例"
+        description="当前种子数据已补充审核、分仓、发货前和人工重跑四类已发布规则，便于直接演示不同触发场景下的配置方式和执行路径。"
       >
-        {shipmentExampleRule ? (
-          <div className="two-col-grid">
-            <div className="version-card">
-              <div className="table-cell-stack">
-                <strong>{shipmentExampleRule.name}</strong>
-                <span className="muted">{shipmentExampleRule.ruleCode}</span>
-                <span className="status-pill status-pill-green">
-                  {shipmentExampleRule.scene} · {shipmentExampleRule.status}
-                </span>
-                <span className="muted">
-                  示例逻辑：若组合表达式判定订单履约优先级为加急，则进入物流公司分支；命中“物流不为顺丰”路径时自动锁单、标记异常并阻断发货，命中“物流符合要求”路径时直接放行。
-                </span>
-              </div>
-              <div className="action-stack">
-                <Link
-                  href={buildRuleHref(
-                    shipmentExampleRule.id,
-                    shipmentExampleRule.activeVersionId ?? undefined
-                  )}
-                  className="button-primary"
-                >
-                  打开示例规则
-                </Link>
-                <Link
-                  href={`/rule-logs?ruleCode=${encodeURIComponent(shipmentExampleRule.ruleCode)}`}
-                  className="button-secondary"
-                >
-                  查看示例日志
-                </Link>
-              </div>
-            </div>
+        {exampleRules.length > 0 ? (
+          <div className="version-group-list">
+            {exampleRules.map((rule) => {
+              const narrative = getExampleRuleNarrative(rule.ruleCode);
 
-            <div className="version-card">
-              <div className="table-cell-stack">
-                <strong>推荐链路</strong>
-                <span className="muted">开始节点：声明场景为“发货前校验”</span>
-                <span className="muted">
-                  条件节点 1：`expression.group(or)`，命中 `delivery_priority eq urgent`
-                </span>
-                <span className="muted">
-                  分支节点：先判断 `payload.shippingCompany eq 顺丰速运`，再把未命中路径路由到锁单动作
-                </span>
-                <span className="muted">
-                  动作节点：`lock-order + mark-abnormal + append-tag + set-note`
-                </span>
-                <span className="muted">结果节点：分别输出“放行当前发货请求”或“阻断发货并自动锁单”</span>
-              </div>
-            </div>
+              return (
+                <article key={rule.id} className="version-card">
+                  <div className="table-cell-stack">
+                    <strong>{narrative.title} · {rule.name}</strong>
+                    <span className="muted">{rule.ruleCode}</span>
+                    <span className="status-pill status-pill-green">
+                      {rule.scene} · {rule.status}
+                    </span>
+                    <span className="muted">{narrative.summary}</span>
+                  </div>
+
+                  <div className="action-stack">
+                    <Link
+                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)}
+                      className="button-primary"
+                    >
+                      打开示例规则
+                    </Link>
+                    <Link
+                      href={`/rule-logs?ruleCode=${encodeURIComponent(rule.ruleCode)}`}
+                      className="button-secondary"
+                    >
+                      查看示例日志
+                    </Link>
+                  </div>
+
+                  <div className="table-cell-stack">
+                    <strong>推荐链路</strong>
+                    {narrative.chain.map((item) => (
+                      <span key={`${rule.ruleCode}-${item}`} className="muted">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : (
           <div className="empty-state">
             <strong>当前数据库还没有内置示例规则。</strong>
-            <span className="muted">执行 `pnpm db:seed` 后，会自动生成 `RULE_SHIPMENT_EXPRESS_GUARD` 已发布版本。</span>
+            <span className="muted">执行 `pnpm db:seed` 后，会自动生成多条已发布业务样例规则。</span>
           </div>
         )}
       </SectionCard>
@@ -561,7 +616,7 @@ export default async function RulesPage({
           <SectionCard
             eyebrow="规则配置"
             title={`${overview.selectedRule.name} · ${overview.selectedRule.ruleCode}`}
-            description="规则定义只管理编码、名称、类型和场景；真正可运行的结构在版本和画布里维护。"
+            description="规则定义层负责编码、名称、状态和启停治理；真正可运行的结构在版本和画布里维护。"
           >
             <div className="two-col-grid">
               <div className="version-card">
@@ -573,7 +628,16 @@ export default async function RulesPage({
                   <span className="muted">
                     {overview.selectedRule.type} · {overview.selectedRule.scene}
                   </span>
+                  <span className="muted">
+                    {overview.selectedRule.activeVersion
+                      ? `当前线上版本 v${overview.selectedRule.activeVersion}`
+                      : "当前没有线上版本"}
+                  </span>
+                  <span className="muted">
+                    发布历史 {overview.selectedRule.publishedHistoryCount} 次
+                  </span>
                   <span className="muted">最近更新：{overview.selectedRule.updatedAt}</span>
+                  <span className="muted">{overview.selectedRule.governanceHint}</span>
                 </div>
               </div>
 
@@ -633,6 +697,63 @@ export default async function RulesPage({
                     </button>
                   </div>
                 </form>
+              ) : null}
+            </div>
+
+            <div className="two-col-grid">
+              <div className="version-card">
+                <div className="table-cell-stack">
+                  <strong>治理约束</strong>
+                  <span className="muted">
+                    停用后的规则不会参与线上自动执行，但仍保留版本、日志和试运行记录。
+                  </span>
+                  <span className="muted">
+                    已停用规则必须先启用，才能继续发布或回滚版本。
+                  </span>
+                  <span className="muted">
+                    回滚目标必须是历史已发布版本；没有发布历史的规则不能直接删除。
+                  </span>
+                </div>
+              </div>
+
+              {canManage ? (
+                <div className="version-card">
+                  <div className="table-cell-stack">
+                    <strong>启停治理</strong>
+                    <span className="muted">
+                      当前状态：{overview.selectedRule.status}
+                    </span>
+                  </div>
+
+                  {overview.selectedRule.status === "DISABLED" ? (
+                    <form className="action-stack" action="/api/rules/definitions" method="post">
+                      <input type="hidden" name="action" value="enable" />
+                      <input type="hidden" name="id" value={overview.selectedRule.id} />
+                      <input
+                        className="text-input"
+                        name="reason"
+                        placeholder="启用说明，可选"
+                      />
+                      <button type="submit" className="button-primary">
+                        启用规则
+                      </button>
+                    </form>
+                  ) : (
+                    <form className="action-stack" action="/api/rules/definitions" method="post">
+                      <input type="hidden" name="action" value="disable" />
+                      <input type="hidden" name="id" value={overview.selectedRule.id} />
+                      <input
+                        className="text-input"
+                        name="reason"
+                        placeholder="停用原因，必填"
+                        required
+                      />
+                      <button type="submit" className="button-danger">
+                        停用规则
+                      </button>
+                    </form>
+                  )}
+                </div>
               ) : null}
             </div>
           </SectionCard>
@@ -701,7 +822,12 @@ export default async function RulesPage({
                           </button>
                         </form>
 
-                        {!version.isActive ? (
+                        {overview.selectedRule?.status === "DISABLED" ? (
+                          <div className="empty-state">
+                            <strong>当前规则已停用。</strong>
+                            <span className="muted">请先在上方启用规则，再执行发布或回滚。</span>
+                          </div>
+                        ) : !version.isActive ? (
                           <>
                             <form className="inline-form" action="/api/rules/versions" method="post">
                               <input type="hidden" name="action" value="publish" />

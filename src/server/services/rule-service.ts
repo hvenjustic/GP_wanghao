@@ -37,7 +37,7 @@ type RuleSelection = {
 };
 
 type RuleDefinitionActionInput = {
-  action: "create" | "update" | "delete";
+  action: "create" | "update" | "delete" | "enable" | "disable";
   session: AuthSession;
   payload: {
     id?: string;
@@ -45,6 +45,7 @@ type RuleDefinitionActionInput = {
     name?: string;
     type?: string;
     scene?: string;
+    reason?: string;
   };
 };
 
@@ -195,6 +196,14 @@ function getActiveVersionId(
   return activations[0]?.id ?? null;
 }
 
+function getPublishedHistoryCount(
+  versions: Array<{
+    publishInfo: Prisma.JsonValue | null;
+  }>
+) {
+  return versions.filter((version) => Boolean(parsePublishInfo(version.publishInfo))).length;
+}
+
 function validateRuleCode(value: string) {
   return /^[A-Z][A-Z0-9_]{2,47}$/.test(value);
 }
@@ -233,14 +242,32 @@ async function getNextRuleVersionNumber(ruleId: string, preferredVersion?: numbe
   return nextVersion;
 }
 
-function buildDefaultRuleSampleInput(scene: string, type: string) {
-  if (type === "WAREHOUSE_ASSIGN") {
+function buildDefaultRuleSampleInput(scene: string, type: string, ruleCode?: string) {
+  if (ruleCode === "RULE_AUTO_APPROVE") {
+    return JSON.stringify(
+      {
+        orderNo: "GP202603220003",
+        amount: 256,
+        paymentStatus: "已支付",
+        isLocked: false,
+        isAbnormal: false,
+        tags: ["自动审核候选"]
+      },
+      null,
+      2
+    );
+  }
+
+  if (ruleCode === "RULE_WAREHOUSE_PRIORITY" || type === "WAREHOUSE_ASSIGN") {
     return JSON.stringify(
       {
         orderNo: "GP202603220099",
-        receiverProvince: "浙江省",
-        receiverCity: "杭州市",
-        amount: 268
+        receiver: {
+          province: "浙江省",
+          city: "杭州市"
+        },
+        amount: 268,
+        status: "PENDING_WAREHOUSE"
       },
       null,
       2
@@ -258,6 +285,20 @@ function buildDefaultRuleSampleInput(scene: string, type: string) {
           trackingNo: "ZT9988776655"
         },
         warehouseCode: "WH-EAST-01"
+      },
+      null,
+      2
+    );
+  }
+
+  if (ruleCode === "RULE_MANUAL_RETRY_RECHECK" || scene === "人工重跑") {
+    return JSON.stringify(
+      {
+        orderNo: "GP202603220002",
+        isAbnormal: true,
+        isLocked: true,
+        tags: ["地址待确认", "人工复核"],
+        reviewMode: "人工审核"
       },
       null,
       2
@@ -339,6 +380,7 @@ export async function getRuleManagementOverview(selection: RuleSelection = {}) {
     const activeVersionId = getActiveVersionId(definition.versions);
     const activeVersion = definition.versions.find((version) => version.id === activeVersionId) ?? null;
     const activePublishInfo = activeVersion ? parsePublishInfo(activeVersion.publishInfo) : null;
+    const publishedHistoryCount = getPublishedHistoryCount(definition.versions);
 
     return {
       id: definition.id,
@@ -351,6 +393,7 @@ export async function getRuleManagementOverview(selection: RuleSelection = {}) {
       activeVersionId,
       activeVersion: activeVersion?.version ?? null,
       draftCount: definition.versions.filter((version) => !parsePublishInfo(version.publishInfo)).length,
+      publishedHistoryCount,
       publishedAt: activePublishInfo?.publishedAtText ?? "-",
       updatedAt: formatDateTime(definition.updatedAt)
     };
@@ -435,7 +478,18 @@ export async function getRuleManagementOverview(selection: RuleSelection = {}) {
           type: selectedDefinition.type,
           scene: selectedDefinition.scene,
           status: selectedDefinition.status,
-          updatedAt: formatDateTime(selectedDefinition.updatedAt)
+          updatedAt: formatDateTime(selectedDefinition.updatedAt),
+          activeVersionId: selectedActiveVersionId,
+          activeVersion:
+            selectedVersionRecords.find((version) => version.id === selectedActiveVersionId)?.version ??
+            null,
+          publishedHistoryCount: getPublishedHistoryCount(selectedDefinition.versions),
+          governanceHint:
+            selectedDefinition.status === RuleStatus.DISABLED
+              ? "当前规则已停用，不会参与线上自动执行；启用后会恢复到最近一次线上版本或草稿状态。"
+              : selectedDefinition.status === RuleStatus.PUBLISHED
+                ? "当前规则处于启用状态，线上执行会以最近一次激活版本为准。"
+                : "当前规则仍是草稿态，只有发布后才会参与线上执行。"
         }
       : null,
     selectedVersion: selectedVersionRecord
@@ -465,7 +519,11 @@ export async function getRuleManagementOverview(selection: RuleSelection = {}) {
       resultEntries: summarizeJsonEntries(log.result)
     })),
     defaultTestInput: selectedDefinition
-      ? buildDefaultRuleSampleInput(selectedDefinition.scene, selectedDefinition.type)
+      ? buildDefaultRuleSampleInput(
+          selectedDefinition.scene,
+          selectedDefinition.type,
+          selectedDefinition.ruleCode
+        )
       : buildDefaultRuleSampleInput("订单创建后", "ORDER_REVIEW"),
     options: {
       sceneOptions: ruleScenes.map((scene) => scene.scene),
@@ -489,18 +547,25 @@ export async function performRuleDefinitionAction(
   const name = input.payload.name?.trim() ?? "";
   const type = input.payload.type?.trim() ?? "";
   const scene = input.payload.scene?.trim() ?? "";
+  const reason = input.payload.reason?.trim() ?? "";
 
-  if (input.action === "delete") {
+  if (["delete", "enable", "disable"].includes(input.action)) {
     if (!id) {
       return {
         ok: false,
-        message: "缺少待删除的规则 ID。"
+        message:
+          input.action === "delete"
+            ? "缺少待删除的规则 ID。"
+            : "缺少目标规则 ID。"
       };
     }
 
     const rule = await prisma.ruleDefinition.findUnique({
       where: {
         id
+      },
+      include: {
+        versions: true
       }
     });
 
@@ -511,6 +576,97 @@ export async function performRuleDefinitionAction(
       };
     }
 
+    const activeVersionId = getActiveVersionId(rule.versions);
+    const publishedHistoryCount = getPublishedHistoryCount(rule.versions);
+
+    if (input.action === "disable") {
+      if (rule.status === RuleStatus.DISABLED) {
+        return {
+          ok: false,
+          message: `规则 ${rule.ruleCode} 当前已停用。`
+        };
+      }
+
+      if (!reason) {
+        return {
+          ok: false,
+          message: "停用规则时必须填写停用原因。"
+        };
+      }
+
+      await prisma.ruleDefinition.update({
+        where: {
+          id: rule.id
+        },
+        data: {
+          status: RuleStatus.DISABLED
+        }
+      });
+
+      await createAuditLog({
+        operatorId: input.session.userId,
+        action: "RULE_DEFINITION_DISABLED",
+        targetType: "RULE_DEFINITION",
+        targetId: rule.id,
+        detail: {
+          ruleCode: rule.ruleCode,
+          previousStatus: rule.status,
+          activeVersionId,
+          reason
+        }
+      });
+
+      return {
+        ok: true,
+        message: `规则 ${rule.ruleCode} 已停用，线上自动执行已关闭。`,
+        ruleId: rule.id,
+        versionId: activeVersionId ?? undefined
+      };
+    }
+
+    if (input.action === "enable") {
+      if (rule.status !== RuleStatus.DISABLED) {
+        return {
+          ok: false,
+          message: `规则 ${rule.ruleCode} 当前不是停用状态，无需启用。`
+        };
+      }
+
+      const restoredStatus = activeVersionId ? RuleStatus.PUBLISHED : RuleStatus.DRAFT;
+
+      await prisma.ruleDefinition.update({
+        where: {
+          id: rule.id
+        },
+        data: {
+          status: restoredStatus
+        }
+      });
+
+      await createAuditLog({
+        operatorId: input.session.userId,
+        action: "RULE_DEFINITION_ENABLED",
+        targetType: "RULE_DEFINITION",
+        targetId: rule.id,
+        detail: {
+          ruleCode: rule.ruleCode,
+          restoredStatus,
+          activeVersionId,
+          note: reason || null
+        }
+      });
+
+      return {
+        ok: true,
+        message:
+          restoredStatus === RuleStatus.PUBLISHED
+            ? `规则 ${rule.ruleCode} 已启用，并恢复到线上状态。`
+            : `规则 ${rule.ruleCode} 已启用，当前恢复为草稿状态。`,
+        ruleId: rule.id,
+        versionId: activeVersionId ?? rule.versions[0]?.id
+      };
+    }
+
     const execCount = await prisma.ruleExecLog.count({
       where: {
         ruleVersion: {
@@ -518,6 +674,20 @@ export async function performRuleDefinitionAction(
         }
       }
     });
+
+    if (rule.status === RuleStatus.PUBLISHED) {
+      return {
+        ok: false,
+        message: `规则 ${rule.ruleCode} 当前仍在线上生效，请先停用后再删除。`
+      };
+    }
+
+    if (publishedHistoryCount > 0) {
+      return {
+        ok: false,
+        message: `规则 ${rule.ruleCode} 已存在发布历史，不能直接删除。`
+      };
+    }
 
     if (execCount > 0) {
       return {
@@ -882,6 +1052,48 @@ export async function performRuleVersionAction(
     };
   }
 
+  if (version.rule.status === RuleStatus.DISABLED) {
+    return {
+      ok: false,
+      message: `规则 ${version.rule.ruleCode} 当前已停用，请先启用后再执行发布或回滚。`,
+      ruleId: version.ruleId,
+      versionId: version.id
+    };
+  }
+
+  if (
+    input.action === "publish" &&
+    version.id === activeVersionId &&
+    version.rule.status === RuleStatus.PUBLISHED
+  ) {
+    return {
+      ok: false,
+      message: `规则 ${version.rule.ruleCode} v${version.version} 当前已是线上版本。`,
+      ruleId: version.ruleId,
+      versionId: version.id
+    };
+  }
+
+  if (input.action === "rollback") {
+    if (!parsePublishInfo(version.publishInfo)) {
+      return {
+        ok: false,
+        message: `规则 ${version.rule.ruleCode} v${version.version} 从未发布，不能作为回滚目标。`,
+        ruleId: version.ruleId,
+        versionId: version.id
+      };
+    }
+
+    if (version.id === activeVersionId && version.rule.status === RuleStatus.PUBLISHED) {
+      return {
+        ok: false,
+        message: `规则 ${version.rule.ruleCode} v${version.version} 当前已是线上版本，无需回滚。`,
+        ruleId: version.ruleId,
+        versionId: version.id
+      };
+    }
+  }
+
   await prisma.$transaction([
     prisma.ruleVersion.update({
       where: {
@@ -910,6 +1122,7 @@ export async function performRuleVersionAction(
       ruleCode: version.rule.ruleCode,
       version: version.version,
       mode: publishPayload.mode,
+      previousActiveVersionId: activeVersionId,
       note: input.payload.note?.trim() || null,
       reason: input.payload.reason?.trim() || null
     }

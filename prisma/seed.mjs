@@ -496,6 +496,14 @@ const ruleDefinitions = [
     type: "SHIPMENT_CHECK",
     scene: "发货前校验",
     status: "PUBLISHED"
+  },
+  {
+    id: "rule-def-manual-retry-recheck",
+    ruleCode: "RULE_MANUAL_RETRY_RECHECK",
+    name: "人工重跑复核规则",
+    type: "MANUAL_RETRY",
+    scene: "人工重跑",
+    status: "PUBLISHED"
   }
 ];
 
@@ -531,8 +539,128 @@ const ruleVersions = [
     ruleId: "rule-def-auto-approve",
     version: 15,
     graph: {
-      nodes: ["开始", "低风险", "自动通过"],
-      edges: 2
+      nodes: [
+        {
+          id: "start-auto-approve",
+          position: {
+            x: 40,
+            y: 140
+          },
+          data: {
+            kind: "start",
+            label: "审核开始",
+            detail: "场景：订单创建后",
+            config: {
+              scene: "订单创建后",
+              description: "针对低风险订单自动审核通过。"
+            }
+          }
+        },
+        {
+          id: "condition-auto-approve-risk",
+          position: {
+            x: 280,
+            y: 140
+          },
+          data: {
+            kind: "condition",
+            label: "是否满足低风险表达式",
+            detail: "金额、支付状态、锁单和异常状态均满足自动审核条件时继续放行。",
+            config: {
+              expression: {
+                type: "group",
+                combinator: "and",
+                expressions: [
+                  {
+                    type: "comparison",
+                    field: "amount",
+                    operator: "lte",
+                    value: 300
+                  },
+                  {
+                    type: "comparison",
+                    field: "paymentStatus",
+                    operator: "includes",
+                    value: "已支付"
+                  },
+                  {
+                    type: "comparison",
+                    field: "isLocked",
+                    operator: "eq",
+                    value: false
+                  },
+                  {
+                    type: "comparison",
+                    field: "isAbnormal",
+                    operator: "eq",
+                    value: false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          id: "action-auto-approve-pass",
+          position: {
+            x: 560,
+            y: 140
+          },
+          data: {
+            kind: "action",
+            label: "执行自动审核通过",
+            detail: "自动清理异常和锁单状态，并把订单流转到待分仓。",
+            config: {
+              actions: [
+                {
+                  action: "approve-review",
+                  note: "命中低风险表达式，自动审核通过。",
+                  stopProcessing: true
+                },
+                {
+                  action: "append-tag",
+                  tag: "自动审核通过"
+                }
+              ]
+            }
+          }
+        },
+        {
+          id: "result-auto-approve-pass",
+          position: {
+            x: 820,
+            y: 140
+          },
+          data: {
+            kind: "result",
+            label: "进入待分仓",
+            detail: "当前订单通过审核，进入后续仓配链路。",
+            config: {
+              result: "APPROVED_TO_WAREHOUSE",
+              decision: "APPROVED",
+              description: "低风险订单自动审核通过。"
+            }
+          }
+        }
+      ],
+      edges: [
+        {
+          id: "edge-auto-approve-1",
+          source: "start-auto-approve",
+          target: "condition-auto-approve-risk"
+        },
+        {
+          id: "edge-auto-approve-2",
+          source: "condition-auto-approve-risk",
+          target: "action-auto-approve-pass",
+          label: "命中"
+        },
+        {
+          id: "edge-auto-approve-3",
+          source: "action-auto-approve-pass",
+          target: "result-auto-approve-pass"
+        }
+      ]
     },
     publishInfo: {
       publishedBy: "配置实施",
@@ -544,8 +672,184 @@ const ruleVersions = [
     ruleId: "rule-def-warehouse-priority",
     version: 11,
     graph: {
-      nodes: ["开始", "区域判断", "优先级排序", "返回仓库"],
-      edges: 3
+      nodes: [
+        {
+          id: "start-warehouse-priority",
+          position: {
+            x: 40,
+            y: 160
+          },
+          data: {
+            kind: "start",
+            label: "审核通过后开始",
+            detail: "场景：审核通过后",
+            config: {
+              scene: "审核通过后",
+              description: "根据区域和优先级把订单路由到目标仓库。"
+            }
+          }
+        },
+        {
+          id: "branch-warehouse-region",
+          position: {
+            x: 300,
+            y: 160
+          },
+          data: {
+            kind: "branch",
+            label: "区域路由分支",
+            detail: "按省份把订单路由到华东、华南或默认仓。",
+            config: {
+              branches: [
+                {
+                  label: "华东区域",
+                  target: "action-warehouse-east",
+                  expression: {
+                    type: "comparison",
+                    field: "receiver.province",
+                    operator: "oneOf",
+                    value: ["浙江省", "江苏省", "上海市", "安徽省"]
+                  }
+                },
+                {
+                  label: "华南区域",
+                  target: "action-warehouse-south",
+                  expression: {
+                    type: "comparison",
+                    field: "receiver.province",
+                    operator: "oneOf",
+                    value: ["广东省", "广西壮族自治区", "福建省", "海南省"]
+                  }
+                }
+              ],
+              defaultTarget: "action-warehouse-north"
+            }
+          }
+        },
+        {
+          id: "action-warehouse-east",
+          position: {
+            x: 620,
+            y: 56
+          },
+          data: {
+            kind: "action",
+            label: "分配华东一仓",
+            detail: "优先把华东区域订单分配到华东一仓。",
+            config: {
+              actions: [
+                {
+                  action: "assign-warehouse",
+                  warehouseCode: "WH-EAST-01",
+                  note: "命中华东区域分仓规则。",
+                  stopProcessing: true
+                }
+              ]
+            }
+          }
+        },
+        {
+          id: "action-warehouse-south",
+          position: {
+            x: 620,
+            y: 160
+          },
+          data: {
+            kind: "action",
+            label: "分配华南二仓",
+            detail: "优先把华南区域订单分配到华南二仓。",
+            config: {
+              actions: [
+                {
+                  action: "assign-warehouse",
+                  warehouseCode: "WH-SOUTH-02",
+                  note: "命中华南区域分仓规则。",
+                  stopProcessing: true
+                }
+              ]
+            }
+          }
+        },
+        {
+          id: "action-warehouse-north",
+          position: {
+            x: 620,
+            y: 264
+          },
+          data: {
+            kind: "action",
+            label: "分配默认仓",
+            detail: "未命中区域分支时回退到默认仓。",
+            config: {
+              actions: [
+                {
+                  action: "assign-warehouse",
+                  warehouseCode: "WH-NORTH-01",
+                  note: "未命中特定区域，回退到默认仓。",
+                  stopProcessing: true
+                }
+              ]
+            }
+          }
+        },
+        {
+          id: "result-warehouse-route",
+          position: {
+            x: 900,
+            y: 160
+          },
+          data: {
+            kind: "result",
+            label: "输出分仓结果",
+            detail: "分仓动作执行完成，订单进入待发货。",
+            config: {
+              result: "ASSIGN_WAREHOUSE",
+              decision: "ASSIGN_WAREHOUSE",
+              description: "规则根据区域完成分仓。"
+            }
+          }
+        }
+      ],
+      edges: [
+        {
+          id: "edge-warehouse-1",
+          source: "start-warehouse-priority",
+          target: "branch-warehouse-region"
+        },
+        {
+          id: "edge-warehouse-2",
+          source: "branch-warehouse-region",
+          target: "action-warehouse-east",
+          label: "华东区域"
+        },
+        {
+          id: "edge-warehouse-3",
+          source: "branch-warehouse-region",
+          target: "action-warehouse-south",
+          label: "华南区域"
+        },
+        {
+          id: "edge-warehouse-4",
+          source: "branch-warehouse-region",
+          target: "action-warehouse-north",
+          label: "默认路径"
+        },
+        {
+          id: "edge-warehouse-5",
+          source: "action-warehouse-east",
+          target: "result-warehouse-route"
+        },
+        {
+          id: "edge-warehouse-6",
+          source: "action-warehouse-south",
+          target: "result-warehouse-route"
+        },
+        {
+          id: "edge-warehouse-7",
+          source: "action-warehouse-north",
+          target: "result-warehouse-route"
+        }
+      ]
     },
     publishInfo: {
       publishedBy: "系统管理员",
@@ -753,6 +1057,170 @@ const ruleVersions = [
       publishedAt: "2026-03-22 09:30",
       note: "发货前校验示例发布规则"
     }
+  },
+  {
+    id: "rule-ver-manual-retry-recheck-v4",
+    ruleId: "rule-def-manual-retry-recheck",
+    version: 4,
+    graph: {
+      nodes: [
+        {
+          id: "start-manual-retry",
+          position: {
+            x: 40,
+            y: 140
+          },
+          data: {
+            kind: "start",
+            label: "人工重跑开始",
+            detail: "场景：人工重跑",
+            config: {
+              scene: "人工重跑",
+              description: "针对已人工处理的订单重新评估是否恢复自动履约。"
+            }
+          }
+        },
+        {
+          id: "branch-manual-retry",
+          position: {
+            x: 300,
+            y: 140
+          },
+          data: {
+            kind: "branch",
+            label: "重跑结论路由",
+            detail: "异常或锁单仍存在时继续人工处理，否则恢复自动履约。",
+            config: {
+              branches: [
+                {
+                  label: "仍需人工复核",
+                  target: "result-manual-retry-review",
+                  expression: {
+                    type: "group",
+                    combinator: "or",
+                    expressions: [
+                      {
+                        type: "comparison",
+                        field: "isAbnormal",
+                        operator: "eq",
+                        value: true
+                      },
+                      {
+                        type: "comparison",
+                        field: "isLocked",
+                        operator: "eq",
+                        value: true
+                      },
+                      {
+                        type: "comparison",
+                        field: "tags",
+                        operator: "includes",
+                        value: "地址待确认"
+                      }
+                    ]
+                  }
+                }
+              ],
+              defaultTarget: "action-manual-retry-release"
+            }
+          }
+        },
+        {
+          id: "action-manual-retry-release",
+          position: {
+            x: 620,
+            y: 240
+          },
+          data: {
+            kind: "action",
+            label: "恢复自动履约",
+            detail: "清理异常和锁单状态，并推进到待分仓。",
+            config: {
+              actions: [
+                {
+                  action: "clear-abnormal"
+                },
+                {
+                  action: "unlock-order"
+                },
+                {
+                  action: "approve-review",
+                  note: "人工重跑确认问题已处理，恢复自动履约。",
+                  stopProcessing: true
+                },
+                {
+                  action: "set-review-mode",
+                  reviewMode: "人工重跑恢复自动履约"
+                }
+              ]
+            }
+          }
+        },
+        {
+          id: "result-manual-retry-review",
+          position: {
+            x: 620,
+            y: 56
+          },
+          data: {
+            kind: "result",
+            label: "继续人工处理",
+            detail: "当前订单仍存在阻塞项，保持人工复核。",
+            config: {
+              result: "KEEP_MANUAL_REVIEW",
+              decision: "MANUAL_REVIEW",
+              description: "人工重跑后仍有风险，继续留在人工处理队列。"
+            }
+          }
+        },
+        {
+          id: "result-manual-retry-release",
+          position: {
+            x: 900,
+            y: 240
+          },
+          data: {
+            kind: "result",
+            label: "恢复待分仓",
+            detail: "人工重跑后恢复自动履约，进入待分仓。",
+            config: {
+              result: "RESTORE_TO_WAREHOUSE",
+              decision: "APPROVED",
+              description: "人工重跑确认已排除风险，恢复后续自动履约。"
+            }
+          }
+        }
+      ],
+      edges: [
+        {
+          id: "edge-manual-retry-1",
+          source: "start-manual-retry",
+          target: "branch-manual-retry"
+        },
+        {
+          id: "edge-manual-retry-2",
+          source: "branch-manual-retry",
+          target: "result-manual-retry-review",
+          label: "继续人工复核"
+        },
+        {
+          id: "edge-manual-retry-3",
+          source: "branch-manual-retry",
+          target: "action-manual-retry-release",
+          label: "恢复自动履约"
+        },
+        {
+          id: "edge-manual-retry-4",
+          source: "action-manual-retry-release",
+          target: "result-manual-retry-release"
+        }
+      ]
+    },
+    publishInfo: {
+      publishedBy: "系统管理员",
+      publishedAt: "2026-03-22 10:02",
+      note: "人工重跑示例发布规则"
+    }
   }
 ];
 
@@ -810,7 +1278,7 @@ const ruleExecLogs = [
     result: {
       decision: "APPROVED",
       nextStatus: "PENDING_WAREHOUSE",
-      path: "开始 -> 低风险 -> 自动通过"
+      path: "审核开始 -> 是否满足低风险表达式 -> 执行自动审核通过 -> 进入待分仓"
     },
     createdAt: "2026-03-22T10:09:00.000Z"
   },
@@ -828,7 +1296,7 @@ const ruleExecLogs = [
     },
     result: {
       assignedWarehouse: "WH-EAST-01",
-      path: "开始 -> 华东区域 -> 华东一仓"
+      path: "审核通过后开始 -> 区域路由分支 -> 分配华东一仓 -> 输出分仓结果"
     },
     createdAt: "2026-03-22T10:23:00.000Z"
   },
@@ -851,6 +1319,26 @@ const ruleExecLogs = [
       reason: "加急订单必须使用顺丰，当前物流公司不符合要求。"
     },
     createdAt: "2026-03-22T10:31:00.000Z"
+  },
+  {
+    id: "rule-log-006",
+    ruleVersionId: "rule-ver-manual-retry-recheck-v4",
+    orderId: "order-002",
+    scene: "人工重跑",
+    status: "SUCCESS",
+    durationMs: 102,
+    input: {
+      orderNo: "GP202603220002",
+      isAbnormal: true,
+      isLocked: true,
+      tags: ["地址待确认", "人工复核"]
+    },
+    result: {
+      decision: "MANUAL_REVIEW",
+      path: "人工重跑开始 -> 重跑结论路由 -> 继续人工处理",
+      reason: "人工重跑后仍检测到异常或锁单状态，继续保留人工复核。"
+    },
+    createdAt: "2026-03-22T10:46:00.000Z"
   }
 ];
 

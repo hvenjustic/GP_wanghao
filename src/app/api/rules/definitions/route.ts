@@ -4,7 +4,7 @@ import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
 import { performRuleDefinitionAction } from "@/server/services/rule-service";
 
-type RuleDefinitionAction = "create" | "update" | "delete";
+type RuleDefinitionAction = "create" | "update" | "delete" | "enable" | "disable";
 
 function getSingleFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const action = getSingleFormValue(formData, "action") as RuleDefinitionAction;
 
-  if (!["create", "update", "delete"].includes(action)) {
+  if (!["create", "update", "delete", "enable", "disable"].includes(action)) {
     const invalidUrl = new URL("/rules", request.url);
     invalidUrl.searchParams.set("error", "不支持的规则定义操作。");
     return NextResponse.redirect(invalidUrl, { status: 303 });
@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
       ruleCode: getSingleFormValue(formData, "ruleCode"),
       name: getSingleFormValue(formData, "name"),
       type: getSingleFormValue(formData, "type"),
-      scene: getSingleFormValue(formData, "scene")
+      scene: getSingleFormValue(formData, "scene"),
+      reason: getSingleFormValue(formData, "reason")
     }
   });
 
