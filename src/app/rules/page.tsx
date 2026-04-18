@@ -6,6 +6,9 @@ import { requirePermission } from "@/lib/auth/guards";
 import {
   ruleActionOptions,
   ruleConditionOperators,
+  ruleExpressionExamples,
+  ruleExpressionGroupOptions,
+  ruleExpressionTypeOptions,
   ruleFieldOptions,
   ruleNodeConfigSemantics,
   ruleNodeConfigTemplates,
@@ -75,7 +78,7 @@ export default async function RulesPage({
         <div>
           <h1 className="app-header-title">规则编排引擎</h1>
           <p className="app-header-subtitle">
-            当前已经接通数据库、规则版本、试运行日志和可视化画布，并补上了节点配置语义和发货前校验示例规则。规则页现在不是占位说明，而是可直接创建、设计、发布和回滚的第一版工作台。
+            当前已经接通数据库、规则版本、试运行日志和可视化画布，并补上了节点配置语义、条件表达式库、多分支执行器和发货前校验示例规则。规则页现在不是占位说明，而是可直接创建、设计、发布、回滚和试运行的第一版工作台。
           </p>
         </div>
         <div className="app-header-meta">
@@ -161,7 +164,7 @@ export default async function RulesPage({
       <SectionCard
         eyebrow="节点语义"
         title="规则节点配置 JSON 约定"
-        description="设计器里的节点配置不再是纯自由 JSON，而是围绕字段路径、条件操作符和动作语义做收敛，便于规则真正驱动订单动作链路。"
+        description="设计器里的节点配置不再是纯自由 JSON，而是围绕字段路径、条件表达式、条件操作符和动作语义做收敛，便于规则真正驱动订单动作链路。"
       >
         <div className="two-col-grid">
           <div className="version-card">
@@ -203,6 +206,59 @@ export default async function RulesPage({
 
           <div className="version-card">
             <div className="table-cell-stack">
+              <strong>表达式结构</strong>
+              <span className="muted">
+                条件节点优先使用 `expression` 字段，支持 comparison、group、not 三类表达式。
+              </span>
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ruleExpressionTypeOptions.map((item) => (
+                  <tr key={item.value}>
+                    <td>{item.value}</td>
+                    <td>
+                      <div className="table-cell-stack">
+                        <strong>{item.label}</strong>
+                        <span className="muted">{item.description}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>组合方式</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ruleExpressionGroupOptions.map((item) => (
+                  <tr key={item.value}>
+                    <td>{item.value}</td>
+                    <td>
+                      <div className="table-cell-stack">
+                        <strong>{item.label}</strong>
+                        <span className="muted">{item.description}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="two-col-grid">
+          <div className="version-card">
+            <div className="table-cell-stack">
               <strong>可执行动作</strong>
               <span className="muted">动作节点支持串行动作数组，可直接落到锁单、审核、分仓、标签和备注写入。</span>
             </div>
@@ -228,9 +284,7 @@ export default async function RulesPage({
               </tbody>
             </table>
           </div>
-        </div>
 
-        <div className="two-col-grid">
           <div className="version-card">
             <div className="table-cell-stack">
               <strong>节点语义说明</strong>
@@ -250,7 +304,10 @@ export default async function RulesPage({
           <div className="version-card">
             <div className="table-cell-stack">
               <strong>推荐 JSON 模板</strong>
-              <span className="muted">设计器右侧选中节点后，可以直接载入对应模板再调整字段和值。</span>
+              <span className="muted">
+                设计器右侧选中节点后，可以直接载入对应模板，再调整表达式、字段和值。分支节点的
+                `target` / `defaultTarget` 必须填写当前分支节点已连接下游节点的 ID。
+              </span>
             </div>
             {ruleNodeTemplates.map((template) => (
               <div key={`template-${template.kind}`} className="table-cell-stack">
@@ -269,6 +326,20 @@ export default async function RulesPage({
                 </pre>
               </div>
             ))}
+            <div className="table-cell-stack">
+              <span className="timeline-title">表达式模板</span>
+              <pre className="code-block">
+                {JSON.stringify(
+                  {
+                    comparison: ruleExpressionExamples.comparison,
+                    group: ruleExpressionExamples.group,
+                    not: ruleExpressionExamples.not
+                  },
+                  null,
+                  2
+                )}
+              </pre>
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -276,7 +347,7 @@ export default async function RulesPage({
       <SectionCard
         eyebrow="示例规则"
         title="发货前校验示例发布规则"
-        description="种子数据已内置一条已发布的发货前校验规则，用来演示如何通过节点配置语义驱动锁单、异常标记和备注写入。"
+        description="种子数据已内置一条已发布的发货前校验规则，用来演示如何通过组合表达式、分支节点和动作节点驱动锁单、异常标记和放行路径。"
       >
         {shipmentExampleRule ? (
           <div className="two-col-grid">
@@ -288,7 +359,7 @@ export default async function RulesPage({
                   {shipmentExampleRule.scene} · {shipmentExampleRule.status}
                 </span>
                 <span className="muted">
-                  示例逻辑：加急订单若发货请求里的 `shippingCompany` 不是“顺丰速运”，则自动锁单、标记异常并阻断发货。
+                  示例逻辑：若组合表达式判定订单履约优先级为加急，则进入物流公司分支；命中“物流不为顺丰”路径时自动锁单、标记异常并阻断发货，命中“物流符合要求”路径时直接放行。
                 </span>
               </div>
               <div className="action-stack">
@@ -314,12 +385,16 @@ export default async function RulesPage({
               <div className="table-cell-stack">
                 <strong>推荐链路</strong>
                 <span className="muted">开始节点：声明场景为“发货前校验”</span>
-                <span className="muted">条件节点 1：`tags includes 加急`</span>
-                <span className="muted">条件节点 2：`payload.shippingCompany neq 顺丰速运`</span>
+                <span className="muted">
+                  条件节点 1：`expression.group(or)`，命中 `delivery_priority eq urgent`
+                </span>
+                <span className="muted">
+                  分支节点：先判断 `payload.shippingCompany eq 顺丰速运`，再把未命中路径路由到锁单动作
+                </span>
                 <span className="muted">
                   动作节点：`lock-order + mark-abnormal + append-tag + set-note`
                 </span>
-                <span className="muted">结果节点：输出“阻断发货并自动锁单”</span>
+                <span className="muted">结果节点：分别输出“放行当前发货请求”或“阻断发货并自动锁单”</span>
               </div>
             </div>
           </div>
@@ -709,6 +784,7 @@ export default async function RulesPage({
                     <div className="table-cell-stack">
                       <strong>设计器约束</strong>
                       <span className="muted">开始节点定义触发场景，动作和结果节点决定试运行输出。</span>
+                      <span className="muted">分支节点按配置顺序匹配 `branches`，`target` 必须是已连接的下游节点 ID。</span>
                       <span className="muted">建议先克隆线上版本，再在新草稿里调整节点和连线。</span>
                       <span className="muted">保存后会重新写入数据库，并可立即试运行。</span>
                     </div>

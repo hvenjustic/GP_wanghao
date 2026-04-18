@@ -1,3 +1,9 @@
+import {
+  ruleComparisonOperatorValues,
+  ruleExpressionGroupCombinators,
+  ruleExpressionKinds
+} from "@/features/rules/lib/rule-expression";
+
 export const ruleScenes = [
   {
     scene: "订单创建后",
@@ -151,7 +157,50 @@ export const ruleConditionOperators = [
     label: "有值",
     description: "字段不为空且不为 null。"
   }
-] as const;
+] as const satisfies ReadonlyArray<{
+  value: (typeof ruleComparisonOperatorValues)[number];
+  label: string;
+  description: string;
+}>;
+
+export const ruleExpressionTypeOptions = [
+  {
+    value: "comparison",
+    label: "比较表达式",
+    description: "单字段比较，适合大多数基础判断场景。"
+  },
+  {
+    value: "group",
+    label: "组合表达式",
+    description: "通过 and / or 把多个子表达式组合成复杂条件。"
+  },
+  {
+    value: "not",
+    label: "取反表达式",
+    description: "对某个子表达式取反，适合表达“不是某值”一类条件。"
+  }
+] as const satisfies ReadonlyArray<{
+  value: (typeof ruleExpressionKinds)[number];
+  label: string;
+  description: string;
+}>;
+
+export const ruleExpressionGroupOptions = [
+  {
+    value: "and",
+    label: "全部满足",
+    description: "所有子表达式都命中才算命中。"
+  },
+  {
+    value: "or",
+    label: "任一满足",
+    description: "只要任一子表达式命中就算命中。"
+  }
+] as const satisfies ReadonlyArray<{
+  value: (typeof ruleExpressionGroupCombinators)[number];
+  label: string;
+  description: string;
+}>;
 
 export const ruleActionOptions = [
   {
@@ -197,12 +246,31 @@ export const ruleNodeConfigTemplates = {
     description: "开始节点通常不参与判断，只用于描述当前场景。"
   },
   condition: {
-    field: "amount",
-    operator: "lte",
-    value: 300
+    expression: {
+      type: "comparison",
+      field: "amount",
+      operator: "lte",
+      value: 300
+    }
   },
   branch: {
-    description: "分支节点当前只做可视化分叉，实际执行默认按主路径继续。"
+    branches: [
+      {
+        label: "命中高风险路径",
+        target: "result-high-risk",
+        expression: {
+          type: "comparison",
+          field: "amount",
+          operator: "gt",
+          value: 500
+        }
+      },
+      {
+        label: "进入默认放行路径",
+        target: "result-pass"
+      }
+    ],
+    defaultTarget: "result-pass"
   },
   action: {
     actions: [
@@ -227,12 +295,14 @@ export const ruleNodeConfigSemantics = {
     "推荐字段：`scene`、`description`。"
   ],
   condition: [
-    "条件节点按 `field + operator + value` 解释。",
+    "条件节点优先按 `expression` 解释，支持 `comparison / group / not` 三种表达式类型。",
+    "为兼容旧规则，运行时仍接受扁平的 `field + operator + value` 写法，但新规则应统一迁移到 `expression` 结构。",
     "字段路径支持订单主字段、嵌套对象字段和动作入参字段，例如 `tags`、`receiver.city`、`payload.shippingCompany`。"
   ],
   branch: [
-    "分支节点当前主要用于画布语义表达，运行时默认沿主路径继续。",
-    "后续会扩展成按边标签或表达式选择分支。"
+    "分支节点按 `branches` 顺序求值，首个命中的分支会决定后续运行路径。",
+    "每个 `branches[].target` 都必须指向当前分支节点已连接的下游节点 ID，推荐把最后一个无表达式分支作为兜底路径。",
+    "若所有显式分支都未命中，则优先走 `defaultTarget`；未配置时才退回首条连线。"
   ],
   action: [
     "动作节点支持单动作对象，或 `actions` 数组串联多个动作。",
@@ -246,4 +316,40 @@ export const ruleNodeConfigSemantics = {
     "计算节点当前作为预留位，不参与真实执行。",
     "后续会扩展变量计算、表达式和评分聚合。"
   ]
+} as const;
+
+export const ruleExpressionExamples = {
+  comparison: {
+    type: "comparison",
+    field: "amount",
+    operator: "lte",
+    value: 300
+  },
+  group: {
+    type: "group",
+    combinator: "and",
+    expressions: [
+      {
+        type: "comparison",
+        field: "delivery_priority",
+        operator: "eq",
+        value: "urgent"
+      },
+      {
+        type: "comparison",
+        field: "payload.shippingCompany",
+        operator: "neq",
+        value: "顺丰速运"
+      }
+    ]
+  },
+  not: {
+    type: "not",
+    expression: {
+      type: "comparison",
+      field: "isLocked",
+      operator: "eq",
+      value: true
+    }
+  }
 } as const;

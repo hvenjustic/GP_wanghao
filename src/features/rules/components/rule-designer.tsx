@@ -126,6 +126,18 @@ export function RuleDesigner({
   const selectedSemantics = selectedNode
     ? ruleNodeConfigSemantics[selectedNode.data.kind]
     : [];
+  const selectedOutgoingEdges = selectedNode
+    ? edges.filter((edge) => edge.source === selectedNode.id)
+    : [];
+  const selectedBranchTargets = selectedOutgoingEdges.map((edge) => {
+    const targetNode = nodes.find((node) => node.id === edge.target);
+    return {
+      edgeId: edge.id,
+      targetId: edge.target,
+      targetLabel: targetNode?.data.label ?? edge.target,
+      edgeLabel: edge.label ? String(edge.label) : ""
+    };
+  });
 
   useEffect(() => {
     if (!selectedNode && nodes[0]) {
@@ -341,6 +353,11 @@ export function RuleDesigner({
               </label>
 
               <label className="form-field">
+                <span className="field-label">节点 ID</span>
+                <input className="text-input" value={selectedNode.id} readOnly />
+              </label>
+
+              <label className="form-field">
                 <span className="field-label">节点说明</span>
                 <textarea
                   className="textarea-input textarea-input-compact"
@@ -378,6 +395,25 @@ export function RuleDesigner({
                 </div>
               ) : null}
 
+              {selectedNode.data.kind === "branch" ? (
+                <div className="table-cell-stack">
+                  <strong>当前分支可选目标</strong>
+                  {selectedBranchTargets.length > 0 ? (
+                    selectedBranchTargets.map((item) => (
+                      <span key={item.edgeId} className="muted">
+                        {item.targetLabel} · `{item.targetId}`
+                        {item.edgeLabel ? ` · 连线标签：${item.edgeLabel}` : ""}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="muted">
+                      当前分支节点还没有下游连线。请先在画布中把分支节点连接到目标节点，再填写
+                      `branches[].target` 或 `defaultTarget`。
+                    </span>
+                  )}
+                </div>
+              ) : null}
+
               {configError ? <div className="alert-banner alert-banner-error">{configError}</div> : null}
 
               <div className="action-stack">
@@ -407,6 +443,7 @@ export function RuleDesigner({
             <strong>设计提示</strong>
             <span className="muted">已发布版本保存时会自动另存为新草稿，避免直接覆盖线上版本。</span>
             <span className="muted">连线通过拖拽节点两侧锚点完成；删除节点会自动清理关联连线。</span>
+            <span className="muted">分支节点的 `target` 必须填写当前节点已连接下游节点的 ID。</span>
           </div>
         </aside>
       </div>

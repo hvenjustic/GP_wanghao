@@ -1,12 +1,19 @@
 import { Prisma, RuleStatus } from "@prisma/client";
 import {
-  buildRuleExecutionPath,
+  buildRuleGraphIndex,
   createDefaultRuleGraph,
+  getLinearNextRuleNode,
   normalizeRuleGraph,
   parseRuleGraphText,
+  resolveRuleBranchSelection,
   ruleGraphToText,
   summarizeRuleGraph
 } from "@/features/rules/lib/rule-graph";
+import {
+  describeRuleConditionExpression,
+  evaluateRuleConditionExpression,
+  parseRuleConditionExpressionConfig
+} from "@/features/rules/lib/rule-expression";
 import { ruleScenes, ruleTypeOptions } from "@/features/rules/config/rule-scenes";
 import { hasPermission, type AuthSession } from "@/lib/auth/types";
 import { prisma } from "@/lib/db/prisma";
@@ -239,6 +246,7 @@ function buildDefaultRuleSampleInput(scene: string, type: string) {
     return JSON.stringify(
       {
         orderNo: "GP202603220004",
+        delivery_priority: "urgent",
         tags: ["加急"],
         payload: {
           shippingCompany: "中通快递",
@@ -276,6 +284,13 @@ function inferDecision(type: string, pathLabels: string[]) {
   if (pathText.includes("自动通过") || pathText.includes("通过")) {
     return {
       decision: "APPROVED",
+      status: "SUCCESS"
+    };
+  }
+
+  if (pathText.includes("放行") || pathText.includes("通过发货")) {
+    return {
+      decision: "ALLOW_SHIPMENT",
       status: "SUCCESS"
     };
   }
@@ -969,11 +984,88 @@ export async function performRuleTestRunAction(
   }
 
   const graph = normalizeRuleGraph(version.graph, version.rule.scene);
-  const pathLabels = buildRuleExecutionPath(graph);
-  const decision = inferDecision(version.rule.type, pathLabels);
-  const actionLabels = graph.nodes
-    .filter((node) => node.data.kind === "action" || node.data.kind === "result")
-    .map((node) => node.data.label);
+  const graphIndex = buildRuleGraphIndex(graph);
+  const pathLabels: string[] = [];
+  const actionLabels: string[] = [];
+  const conditionResults: Prisma.InputJsonObject[] = [];
+  const branchResults: Prisma.InputJsonObject[] = [];
+  let matched = true;
+  let currentNode = graphIndex.startNode;
+  const visitedNodeIds = new Set<string>();
+
+  while (currentNode && !visitedNodeIds.has(currentNode.id)) {
+    visitedNodeIds.add(currentNode.id);
+    pathLabels.push(currentNode.data.label);
+
+    if (currentNode.data.kind === "condition") {
+      const expression = parseRuleConditionExpressionConfig(currentNode.data.config);
+
+      if (!expression) {
+        conditionResults.push({
+          nodeLabel: currentNode.data.label,
+          matched: true,
+          summary: "当前条件节点未配置显式表达式，试运行默认按主路径继续。"
+        });
+        currentNode = getLinearNextRuleNode(graphIndex, currentNode.id);
+        continue;
+      }
+
+      const evaluation = evaluateRuleConditionExpression(expression, parsedInput);
+      conditionResults.push({
+        nodeLabel: currentNode.data.label,
+        matched: evaluation.matched,
+        expression: describeRuleConditionExpression(expression),
+        summary: evaluation.summary
+      });
+
+      if (!evaluation.matched) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (currentNode.data.kind === "branch") {
+      const selection = resolveRuleBranchSelection({
+        node: currentNode,
+        outgoingEdges: graphIndex.outgoing.get(currentNode.id) ?? [],
+        context: parsedInput
+      });
+
+      branchResults.push({
+        nodeLabel: currentNode.data.label,
+        mode: selection.mode,
+        targetId: selection.targetId ?? null,
+        targetLabel: selection.targetLabel ?? null,
+        summary: selection.summary,
+        evaluations: selection.evaluations.map((item) => ({
+          label: item.label,
+          target: item.target,
+          matched: item.matched,
+          expression: item.expression ?? null,
+          summary: item.summary,
+          detail: item.detail ?? null
+        }))
+      });
+
+      currentNode = selection.targetId
+        ? graphIndex.nodesById.get(selection.targetId)
+        : undefined;
+      continue;
+    }
+
+    if (currentNode.data.kind === "action" || currentNode.data.kind === "result") {
+      actionLabels.push(currentNode.data.label);
+    }
+
+    currentNode = getLinearNextRuleNode(graphIndex, currentNode.id);
+  }
+
+  const decision = matched
+    ? inferDecision(version.rule.type, pathLabels)
+    : {
+        decision: "NO_MATCH",
+        status: "NO_MATCH"
+      };
   const durationMs = 48 + graph.nodes.length * 9 + graph.edges.length * 6;
 
   const log = await prisma.ruleExecLog.create({
@@ -986,8 +1078,11 @@ export async function performRuleTestRunAction(
       input: parsedInput,
       result: {
         decision: decision.decision,
+        matched,
         path: pathLabels.join(" -> "),
         actionSummary: actionLabels,
+        conditionResults,
+        branchResults,
         nodeCount: graph.nodes.length,
         edgeCount: graph.edges.length
       }

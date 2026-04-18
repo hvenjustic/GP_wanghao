@@ -582,29 +582,67 @@ const ruleVersions = [
           },
           data: {
             kind: "condition",
-            label: "履约优先级是否加急",
-            detail: "只有履约优先级为加急的订单才要求必须走顺丰。",
+            label: "是否命中加急履约表达式",
+            detail: "通过组合表达式判断订单是否属于必须走顺丰的高优先级履约场景。",
             config: {
-              field: "delivery_priority",
-              operator: "eq",
-              value: "urgent"
+              expression: {
+                type: "group",
+                combinator: "or",
+                expressions: [
+                  {
+                    type: "comparison",
+                    field: "delivery_priority",
+                    operator: "eq",
+                    value: "urgent"
+                  },
+                  {
+                    type: "comparison",
+                    field: "tags",
+                    operator: "includes",
+                    value: "优先履约"
+                  }
+                ]
+              }
             }
           }
         },
         {
-          id: "condition-shipment-company",
+          id: "branch-shipment-company",
           position: {
             x: 540,
             y: 140
           },
           data: {
-            kind: "condition",
-            label: "物流公司是否顺丰",
-            detail: "若当前发货请求的物流公司不是顺丰，则阻断发货。",
+            kind: "branch",
+            label: "物流公司路由分支",
+            detail: "按物流公司表达式决定走拦截路径还是放行路径。",
             config: {
-              field: "payload.shippingCompany",
-              operator: "neq",
-              value: "顺丰速运"
+              branches: [
+                {
+                  label: "物流不为顺丰",
+                  target: "action-shipment-block",
+                  expression: {
+                    type: "not",
+                    expression: {
+                      type: "comparison",
+                      field: "payload.shippingCompany",
+                      operator: "eq",
+                      value: "顺丰速运"
+                    }
+                  }
+                },
+                {
+                  label: "物流符合要求",
+                  target: "result-shipment-pass",
+                  expression: {
+                    type: "comparison",
+                    field: "payload.shippingCompany",
+                    operator: "eq",
+                    value: "顺丰速运"
+                  }
+                }
+              ],
+              defaultTarget: "result-shipment-pass"
             }
           }
         },
@@ -645,6 +683,23 @@ const ruleVersions = [
           }
         },
         {
+          id: "result-shipment-pass",
+          position: {
+            x: 820,
+            y: 216
+          },
+          data: {
+            kind: "result",
+            label: "放行当前发货请求",
+            detail: "物流公司符合要求，当前发货链路允许继续。",
+            config: {
+              result: "PASS_SHIPMENT",
+              decision: "ALLOW_SHIPMENT",
+              description: "加急订单已使用顺丰，可继续执行发货。"
+            }
+          }
+        },
+        {
           id: "result-shipment-block",
           position: {
             x: 1080,
@@ -671,17 +726,23 @@ const ruleVersions = [
         {
           id: "edge-shipment-2",
           source: "condition-shipment-urgent",
-          target: "condition-shipment-company",
+          target: "branch-shipment-company",
           label: "命中"
         },
         {
           id: "edge-shipment-3",
-          source: "condition-shipment-company",
+          source: "branch-shipment-company",
           target: "action-shipment-block",
-          label: "命中"
+          label: "物流不为顺丰"
         },
         {
           id: "edge-shipment-4",
+          source: "branch-shipment-company",
+          target: "result-shipment-pass",
+          label: "物流符合要求"
+        },
+        {
+          id: "edge-shipment-5",
           source: "action-shipment-block",
           target: "result-shipment-block"
         }
@@ -786,7 +847,7 @@ const ruleExecLogs = [
     },
     result: {
       decision: "LOCK_ORDER",
-      path: "发货前开始 -> 是否加急订单 -> 物流公司是否顺丰 -> 阻断发货并锁单 -> 阻断发货并自动锁单",
+      path: "发货前开始 -> 是否命中加急履约表达式 -> 物流公司路由分支 -> 阻断发货并锁单 -> 阻断发货并自动锁单",
       reason: "加急订单必须使用顺丰，当前物流公司不符合要求。"
     },
     createdAt: "2026-03-22T10:31:00.000Z"

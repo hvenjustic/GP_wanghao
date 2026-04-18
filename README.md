@@ -111,6 +111,7 @@ pnpm db:seed
 
 - [需求文档](docs/requirements.md)
 - [技术路线文档](docs/tech-roadmap.md)
+- [项目流程图](docs/project-flow.md)
 - [开发任务清单](docs/dev-task-list.md)
 - [进度记录](docs/progress.md)
 

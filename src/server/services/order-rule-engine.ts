@@ -1,11 +1,16 @@
 import { Prisma, RuleStatus } from "@prisma/client";
 import {
-  buildRuleExecutionPath,
+  buildRuleGraphIndex,
+  getLinearNextRuleNode,
   normalizeRuleGraph,
-  type RuleGraph,
+  resolveRuleBranchSelection,
   type RuleGraphNode,
   type RuleJsonValue
 } from "@/features/rules/lib/rule-graph";
+import {
+  evaluateRuleConditionExpression,
+  parseRuleConditionExpressionConfig
+} from "@/features/rules/lib/rule-expression";
 import type {
   OrderLogEntry,
   OrderRecord,
@@ -93,6 +98,27 @@ function isJsonRecord(value: RuleJsonValue | Prisma.JsonValue | null | undefined
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function inferRuleDecision(resultNode: RuleGraphNode | undefined, appliedActions: RuntimeAction[]) {
+  const actionDecision = appliedActions
+    .map((action) => action.action)
+    .filter((item) => item !== "noop")
+    .join(", ");
+
+  if (actionDecision) {
+    return actionDecision;
+  }
+
+  if (resultNode && isJsonRecord(resultNode.data.config) && typeof resultNode.data.config.decision === "string") {
+    return resultNode.data.config.decision;
+  }
+
+  if (resultNode?.data.label.includes("放行")) {
+    return "allow-shipment";
+  }
+
+  return "none";
+}
+
 function appendTag(record: OrderRecord, tag?: string) {
   if (!tag) {
     return;
@@ -152,8 +178,8 @@ function deriveDeliveryPriority(record: OrderRecord) {
   return "normal";
 }
 
-function getOrderFieldValue(record: OrderRecord, payload: OrderRulePayload | undefined, path: string): unknown {
-  const context: Record<string, unknown> = {
+function buildOrderRuleContext(record: OrderRecord, payload: OrderRulePayload | undefined) {
+  return {
     orderNo: record.orderNo,
     sourceNo: record.sourceNo,
     sourceChannel: record.sourceChannel,
@@ -177,56 +203,6 @@ function getOrderFieldValue(record: OrderRecord, payload: OrderRulePayload | und
     itemCount: record.items.reduce((total, item) => total + item.quantity, 0),
     skuCount: record.items.length
   };
-
-  const segments = path.split(".");
-  let current: unknown = context;
-
-  for (const segment of segments) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) {
-      return undefined;
-    }
-
-    current = (current as Record<string, unknown>)[segment];
-  }
-
-  return current;
-}
-
-function evaluateConditionValue(actual: unknown, operator: string, expected: RuleJsonValue | undefined) {
-  switch (operator) {
-    case "eq":
-      return actual === expected;
-    case "neq":
-      return actual !== expected;
-    case "gt":
-      return Number(actual) > Number(expected);
-    case "gte":
-      return Number(actual) >= Number(expected);
-    case "lt":
-      return Number(actual) < Number(expected);
-    case "lte":
-      return Number(actual) <= Number(expected);
-    case "includes":
-      if (Array.isArray(actual)) {
-        return actual.includes(expected);
-      }
-      return String(actual ?? "").includes(String(expected ?? ""));
-    case "notIncludes":
-      if (Array.isArray(actual)) {
-        return !actual.includes(expected);
-      }
-      return !String(actual ?? "").includes(String(expected ?? ""));
-    case "startsWith":
-      return String(actual ?? "").startsWith(String(expected ?? ""));
-    case "endsWith":
-      return String(actual ?? "").endsWith(String(expected ?? ""));
-    case "oneOf":
-      return Array.isArray(expected) ? expected.includes(actual as never) : false;
-    case "exists":
-      return actual !== undefined && actual !== null && String(actual).trim() !== "";
-    default:
-      return false;
-  }
 }
 
 function inferConditionByLabel(
@@ -270,25 +246,6 @@ function inferConditionByLabel(
   }
 
   return true;
-}
-
-function parseConditionConfig(config: RuleJsonValue | undefined) {
-  if (!isJsonRecord(config)) {
-    return null;
-  }
-
-  const field = typeof config.field === "string" ? config.field : "";
-  const operator = typeof config.operator === "string" ? config.operator : "eq";
-
-  if (!field) {
-    return null;
-  }
-
-  return {
-    field,
-    operator,
-    value: config.value
-  };
 }
 
 function parseActionConfig(config: RuleJsonValue | undefined): RuntimeAction[] {
@@ -610,38 +567,6 @@ async function getActiveRuleVersionsByScene(
     .filter((item): item is ActiveRuleVersion => item !== null);
 }
 
-function buildTraversalNodes(graph: RuleGraph) {
-  if (graph.nodes.length === 0) {
-    return [] as RuleGraphNode[];
-  }
-
-  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const outgoing = graph.edges.reduce(
-    (map, edge) => {
-      const current = map.get(edge.source) ?? [];
-      current.push(edge);
-      map.set(edge.source, current);
-      return map;
-    },
-    new Map<string, RuleGraph["edges"]>()
-  );
-
-  const startNode = graph.nodes.find((node) => node.data.kind === "start") ?? graph.nodes[0];
-  const visited = new Set<string>();
-  const ordered: RuleGraphNode[] = [];
-  let currentNode: RuleGraphNode | undefined = startNode;
-
-  while (currentNode && !visited.has(currentNode.id)) {
-    visited.add(currentNode.id);
-    ordered.push(currentNode);
-    const nextEdge: RuleGraph["edges"][number] | undefined =
-      (outgoing.get(currentNode.id) ?? [])[0];
-    currentNode = nextEdge ? nodesById.get(nextEdge.target) : undefined;
-  }
-
-  return ordered;
-}
-
 export async function executeOrderRulesForScene(input: {
   tx: Prisma.TransactionClient;
   order: OrderRecord;
@@ -660,23 +585,35 @@ export async function executeOrderRulesForScene(input: {
 
   for (const version of activeVersions) {
     const graph = normalizeRuleGraph(version.graph, input.scene);
-    const traversalNodes = buildTraversalNodes(graph);
-    const pathLabels = buildRuleExecutionPath(graph);
+    const graphIndex = buildRuleGraphIndex(graph);
+    const visitedNodes: RuleGraphNode[] = [];
+    const pathLabels: string[] = [];
+    const branchSelections: Prisma.InputJsonObject[] = [];
     const beforeRuleState = cloneOrder(workingRecord);
     const appliedActions: RuntimeAction[] = [];
     let matched = true;
     let shouldStopProcessing = false;
+    let currentNode = graphIndex.startNode;
+    const visitedNodeIds = new Set<string>();
 
-    for (const node of traversalNodes) {
-      if (node.data.kind === "condition") {
-        const conditionConfig = parseConditionConfig(node.data.config);
-        const conditionPassed = conditionConfig
-          ? evaluateConditionValue(
-              getOrderFieldValue(workingRecord, input.payload, conditionConfig.field),
-              conditionConfig.operator,
-              conditionConfig.value
-            )
-          : inferConditionByLabel(version.rule.ruleCode, node.data.label, workingRecord, input.payload);
+    while (currentNode && !visitedNodeIds.has(currentNode.id)) {
+      visitedNodeIds.add(currentNode.id);
+      visitedNodes.push(currentNode);
+      pathLabels.push(currentNode.data.label);
+
+      if (currentNode.data.kind === "condition") {
+        const conditionExpression = parseRuleConditionExpressionConfig(currentNode.data.config);
+        const conditionPassed = conditionExpression
+          ? evaluateRuleConditionExpression(
+              conditionExpression,
+              buildOrderRuleContext(workingRecord, input.payload)
+            ).matched
+          : inferConditionByLabel(
+              version.rule.ruleCode,
+              currentNode.data.label,
+              workingRecord,
+              input.payload
+            );
 
         if (!conditionPassed) {
           matched = false;
@@ -684,12 +621,42 @@ export async function executeOrderRulesForScene(input: {
         }
       }
 
-      if (node.data.kind === "action") {
-        const configuredActions = parseActionConfig(node.data.config);
+      if (currentNode.data.kind === "branch") {
+        const selection = resolveRuleBranchSelection({
+          node: currentNode,
+          outgoingEdges: graphIndex.outgoing.get(currentNode.id) ?? [],
+          context: buildOrderRuleContext(workingRecord, input.payload)
+        });
+
+        branchSelections.push({
+          nodeId: currentNode.id,
+          nodeLabel: currentNode.data.label,
+          mode: selection.mode,
+          targetId: selection.targetId ?? null,
+          targetLabel: selection.targetLabel ?? null,
+          summary: selection.summary,
+          evaluations: selection.evaluations.map((item) => ({
+            label: item.label,
+            target: item.target,
+            matched: item.matched,
+            expression: item.expression ?? null,
+            summary: item.summary,
+            detail: item.detail ?? null
+          }))
+        });
+
+        currentNode = selection.targetId
+          ? graphIndex.nodesById.get(selection.targetId)
+          : undefined;
+        continue;
+      }
+
+      if (currentNode.data.kind === "action") {
+        const configuredActions = parseActionConfig(currentNode.data.config);
         const runtimeActions =
           configuredActions.length > 0
             ? configuredActions
-            : inferActionsByRule(version.rule.ruleCode, node.data.label, input.scene);
+            : inferActionsByRule(version.rule.ruleCode, currentNode.data.label, input.scene);
 
         for (const runtimeAction of runtimeActions) {
           await applyRuntimeAction(input.tx, workingRecord, runtimeAction, input.scene);
@@ -701,17 +668,21 @@ export async function executeOrderRulesForScene(input: {
           }
         }
       }
+
+      currentNode = getLinearNextRuleNode(graphIndex, currentNode.id);
     }
 
     if (!matched) {
       continue;
     }
 
-    if (appliedActions.length === 0 && traversalNodes.every((node) => node.data.kind !== "result")) {
+    if (appliedActions.length === 0 && visitedNodes.every((node) => node.data.kind !== "result")) {
       continue;
     }
 
-    const resultNode = traversalNodes.find((node) => node.data.kind === "result");
+    const resultNode = [...visitedNodes]
+      .reverse()
+      .find((node) => node.data.kind === "result");
     const resultText = inferResultText(
       resultNode,
       appliedActions,
@@ -732,11 +703,7 @@ export async function executeOrderRulesForScene(input: {
       version: `v${version.version}`,
       path: pathLabels.join(" -> "),
       result: resultText,
-      decision:
-        appliedActions
-          .map((action) => action.action)
-          .filter((item) => item !== "noop")
-          .join(", ") || "none",
+      decision: inferRuleDecision(resultNode, appliedActions),
       executedAt: now
     };
 
@@ -754,7 +721,7 @@ export async function executeOrderRulesForScene(input: {
       orderId: input.order.id,
       scene: input.scene,
       status: blockedByRule ? "BLOCKED" : "SUCCESS",
-      durationMs: 40 + traversalNodes.length * 8 + appliedActions.length * 12,
+      durationMs: 40 + visitedNodes.length * 8 + appliedActions.length * 12 + branchSelections.length * 6,
       input: {
         orderNo: workingRecord.orderNo,
         status: beforeRuleState.status,
@@ -771,6 +738,7 @@ export async function executeOrderRulesForScene(input: {
         path: hitItem.path,
         result: resultText,
         actions: appliedActions.map((action) => action.action),
+        branches: branchSelections,
         afterStatus: workingRecord.status,
         afterWarehouseCode: workingRecord.warehouseCode,
         afterIsLocked: workingRecord.isLocked,
