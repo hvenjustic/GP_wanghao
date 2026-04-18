@@ -155,8 +155,19 @@ const fieldMetas = [
     required: false,
     schema: {
       options: ["normal", "urgent", "vip"],
+      optionLabels: {
+        normal: "普通",
+        urgent: "加急",
+        vip: "VIP"
+      },
       listVisible: true,
-      detailVisible: true
+      detailVisible: true,
+      description: "根据订单标签和客户等级计算的履约优先级。",
+      runtime: {
+        path: "tags",
+        strategy: "delivery_priority_from_tags",
+        fallback: "normal"
+      }
     }
   },
   {
@@ -312,7 +323,18 @@ const metaConfigSnapshots = [
       schema: {
         options: ["normal", "urgent", "vip"],
         listVisible: true,
-        detailVisible: true
+        detailVisible: true,
+        optionLabels: {
+          normal: "普通",
+          urgent: "加急",
+          vip: "VIP"
+        },
+        description: "根据订单标签和客户等级计算的履约优先级。",
+        runtime: {
+          path: "tags",
+          strategy: "delivery_priority_from_tags",
+          fallback: "normal"
+        }
       }
     },
     operatorId: "demo-config",
@@ -406,10 +428,18 @@ const pageMetas = [
     pageCode: "order_extension_detail",
     pageType: "detail",
     version: 1,
-    status: "DRAFT",
+    status: "PUBLISHED",
     schema: {
-      groups: ["基础信息", "审核信息"],
-      fields: ["delivery_priority", "review_note"]
+      fields: ["delivery_priority"],
+      groups: [
+        {
+          key: "fulfillment-extension",
+          title: "履约扩展字段",
+          description: "由低代码运行时读取已发布配置后渲染。",
+          fields: ["delivery_priority"]
+        }
+      ],
+      emptyText: "当前没有可生效的扩展字段。"
     }
   },
   {
@@ -865,6 +895,20 @@ const auditLogs = [
       previousPublishedVersion: null
     },
     createdAt: "2026-03-22T11:24:00.000Z"
+  },
+  {
+    id: "audit-log-009",
+    operatorId: "demo-config",
+    action: "META_PAGE_PUBLISHED",
+    targetType: "PAGE_META",
+    targetId: "page-meta-order-extension-detail-v1",
+    detail: {
+      entityCode: "ORDER_EXTENSION",
+      pageCode: "order_extension_detail",
+      version: 1,
+      previousPublishedVersion: null
+    },
+    createdAt: "2026-03-22T11:28:00.000Z"
   }
 ];
 

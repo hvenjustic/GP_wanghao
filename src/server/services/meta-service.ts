@@ -87,6 +87,18 @@ type MetaOverviewSelection = {
   entityPreviewId?: string;
   pagePreviewId?: string;
   fieldPreviewId?: string;
+  entityDiffSnapshotId?: string;
+  fieldDiffSnapshotId?: string;
+  pageDiffId?: string;
+};
+
+type MetaDiffKind = "ADDED" | "REMOVED" | "CHANGED";
+
+type MetaDiffEntry = {
+  path: string;
+  kind: MetaDiffKind;
+  before: string;
+  after: string;
 };
 
 export const recordStatusOptions: RecordStatus[] = [
@@ -204,6 +216,106 @@ function jsonContainsString(value: Prisma.JsonValue | null | undefined, target: 
   return false;
 }
 
+function formatDiffValue(value: unknown): string {
+  if (value === undefined) {
+    return "未定义";
+  }
+
+  if (value === null) {
+    return "空";
+  }
+
+  if (typeof value === "string") {
+    return value || "(空字符串)";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
+}
+
+function formatDiffPath(basePath: string, key: string | number, useBracket = false) {
+  if (typeof key === "number" || useBracket) {
+    return `${basePath}[${key}]`;
+  }
+
+  return basePath ? `${basePath}.${key}` : String(key);
+}
+
+function isDiffRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function appendDiffEntries(
+  before: unknown,
+  after: unknown,
+  path: string,
+  entries: MetaDiffEntry[]
+) {
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const maxLength = Math.max(before.length, after.length);
+
+    for (let index = 0; index < maxLength; index += 1) {
+      appendDiffEntries(
+        before[index],
+        after[index],
+        formatDiffPath(path, index, true),
+        entries
+      );
+    }
+
+    return;
+  }
+
+  if (isDiffRecord(before) && isDiffRecord(after)) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+
+    for (const key of Array.from(keys).sort((left, right) => left.localeCompare(right))) {
+      appendDiffEntries(
+        before[key],
+        after[key],
+        formatDiffPath(path, key),
+        entries
+      );
+    }
+
+    return;
+  }
+
+  if (JSON.stringify(before) === JSON.stringify(after)) {
+    return;
+  }
+
+  entries.push({
+    path: path || "根节点",
+    kind:
+      before === undefined ? "ADDED" : after === undefined ? "REMOVED" : "CHANGED",
+    before: formatDiffValue(before),
+    after: formatDiffValue(after)
+  });
+}
+
+function buildDiffEntries(before: unknown, after: unknown) {
+  const entries: MetaDiffEntry[] = [];
+  appendDiffEntries(before, after, "", entries);
+  return entries;
+}
+
+function summarizeDiffEntries(entries: MetaDiffEntry[]) {
+  return {
+    total: entries.length,
+    addedCount: entries.filter((entry) => entry.kind === "ADDED").length,
+    removedCount: entries.filter((entry) => entry.kind === "REMOVED").length,
+    changedCount: entries.filter((entry) => entry.kind === "CHANGED").length
+  };
+}
+
 async function getNextSnapshotVersion(targetType: string, targetId: string) {
   const latest = await prisma.metaConfigSnapshot.findFirst({
     where: {
@@ -254,6 +366,22 @@ function buildFieldSnapshotPayload(field: {
     status: field.status,
     required: field.required,
     schema: field.schema
+  } satisfies Prisma.InputJsonObject;
+}
+
+function buildPageSnapshotPayload(page: {
+  pageCode: string;
+  pageType: string;
+  version: number;
+  status: RecordStatus;
+  schema: Prisma.JsonValue;
+}) {
+  return {
+    pageCode: page.pageCode,
+    pageType: page.pageType,
+    version: page.version,
+    status: page.status,
+    schema: page.schema
   } satisfies Prisma.InputJsonObject;
 }
 
@@ -779,6 +907,77 @@ export async function getMetaManagementOverview(
     operatorName: snapshot.operator?.name ?? "系统",
     snapshotEntries: summarizeJsonEntries(snapshot.snapshot)
   }));
+  const previewEntityRecord =
+    previewEntity ? entities.find((item) => item.id === previewEntity.id) ?? null : null;
+  const previewFieldRecord =
+    previewField ? fields.find((item) => item.id === previewField.id) ?? null : null;
+  const previewPageRecord =
+    previewPage ? pages.find((item) => item.id === previewPage.id) ?? null : null;
+  const entityDiffTarget =
+    previewEntityRecord && selection.entityDiffSnapshotId
+      ? previewEntitySnapshots.find((snapshot) => snapshot.id === selection.entityDiffSnapshotId) ??
+        null
+      : null;
+  const fieldDiffTarget =
+    previewFieldRecord && selection.fieldDiffSnapshotId
+      ? previewFieldSnapshots.find((snapshot) => snapshot.id === selection.fieldDiffSnapshotId) ??
+        null
+      : null;
+  const pageCompareCandidates = previewPageRecord
+    ? pages
+        .filter(
+          (item) =>
+            item.entityId === previewPageRecord.entityId &&
+            item.pageCode === previewPageRecord.pageCode &&
+            item.id !== previewPageRecord.id
+        )
+        .sort((left, right) => right.version - left.version)
+    : [];
+  const pageDiffTarget =
+    previewPageRecord && selection.pageDiffId
+      ? pageCompareCandidates.find((item) => item.id === selection.pageDiffId) ?? null
+      : null;
+  const entityDiffBaseline =
+    entityDiffTarget ??
+    (previewEntityRecord
+      ? previewEntitySnapshots.find((snapshot) => snapshot.version !== previewEntityRecord.version) ??
+        null
+      : null);
+  const fieldDiffBaseline =
+    fieldDiffTarget ??
+    (previewFieldRecord
+      ? previewFieldSnapshots.find((snapshot) => snapshot.version !== previewFieldRecord.version) ??
+        null
+      : null);
+  const pageDiffBaseline =
+    pageDiffTarget ??
+    pageCompareCandidates.find((item) => item.status === RecordStatus.PUBLISHED) ??
+    pageCompareCandidates[0] ??
+    null;
+  const entityDiffEntries =
+    previewEntityRecord && entityDiffBaseline
+      ? buildDiffEntries(
+          entityDiffBaseline.snapshot,
+          buildEntitySnapshotPayload(previewEntityRecord)
+        )
+      : [];
+  const fieldDiffEntries =
+    previewFieldRecord && fieldDiffBaseline
+      ? buildDiffEntries(
+          fieldDiffBaseline.snapshot,
+          buildFieldSnapshotPayload(previewFieldRecord)
+        )
+      : [];
+  const pageDiffEntries =
+    previewPageRecord && pageDiffBaseline
+      ? buildDiffEntries(
+          buildPageSnapshotPayload(pageDiffBaseline),
+          buildPageSnapshotPayload(previewPageRecord)
+        )
+      : [];
+  const entityDiffSummary = summarizeDiffEntries(entityDiffEntries);
+  const fieldDiffSummary = summarizeDiffEntries(fieldDiffEntries);
+  const pageDiffSummary = summarizeDiffEntries(pageDiffEntries);
 
   return {
     entities: entityItems,
@@ -800,6 +999,41 @@ export async function getMetaManagementOverview(
     fieldSnapshots: fieldSnapshotItems,
     fieldDependencyItems: previewFieldDependencyItems,
     releaseHistory,
+    diffs: {
+      entity: previewEntityRecord
+        ? {
+            currentLabel: `${previewEntityRecord.entityCode} · 当前 v${previewEntityRecord.version}`,
+            baselineId: entityDiffBaseline?.id ?? null,
+            baselineLabel: entityDiffBaseline
+              ? `快照 v${entityDiffBaseline.version} · ${entityDiffBaseline.status ?? "-"}`
+              : null,
+            summary: entityDiffSummary,
+            entries: entityDiffEntries
+          }
+        : null,
+      field: previewFieldRecord
+        ? {
+            currentLabel: `${previewFieldRecord.fieldCode} · 当前 v${previewFieldRecord.version}`,
+            baselineId: fieldDiffBaseline?.id ?? null,
+            baselineLabel: fieldDiffBaseline
+              ? `快照 v${fieldDiffBaseline.version} · ${fieldDiffBaseline.status ?? "-"}`
+              : null,
+            summary: fieldDiffSummary,
+            entries: fieldDiffEntries
+          }
+        : null,
+      page: previewPageRecord
+        ? {
+            currentLabel: `${previewPageRecord.pageCode} · 当前 v${previewPageRecord.version}`,
+            baselineId: pageDiffBaseline?.id ?? null,
+            baselineLabel: pageDiffBaseline
+              ? `页面版本 v${pageDiffBaseline.version} · ${pageDiffBaseline.status}`
+              : null,
+            summary: pageDiffSummary,
+            entries: pageDiffEntries
+          }
+        : null
+    },
     entityOptions: entityItems.map((entity) => ({
       id: entity.id,
       entityCode: entity.entityCode,

@@ -4,6 +4,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { SectionCard } from "@/components/ui/section-card";
 import { orderStateMap } from "@/features/orders/config/order-states";
 import { requirePermission } from "@/lib/auth/guards";
+import { getOrderExtensionDetailRuntime } from "@/server/services/meta-runtime-service";
 import {
   getOrderActionAvailability,
   getOrderDetail,
@@ -58,6 +59,9 @@ export default async function OrderDetailPage({
   const state = orderStateMap[order.status];
   const availability = getOrderActionAvailability(order, currentUser.permissions);
   const warehouses = await getWarehouseOptions();
+  const extensionRuntime = await getOrderExtensionDetailRuntime(order);
+  const abnormalHistory = order.abnormalContext?.history ?? [];
+  const abnormalBlockers = order.abnormalContext?.blockers ?? [];
 
   return (
     <div className="page-grid">
@@ -128,6 +132,125 @@ export default async function OrderDetailPage({
           hint="人工、系统和规则操作都会在这里留痕。"
         />
       </div>
+
+      <SectionCard
+        eyebrow="异常处理"
+        title="异常状态与恢复链路"
+        description="这里集中展示当前异常原因、最近一次异常处理记录，以及建议的恢复路径，避免列表页和详情页对异常信息理解不一致。"
+      >
+        <div className="kv-grid">
+          <div>
+            <strong>当前异常状态</strong>
+            <span>{order.isAbnormal ? "异常处理中" : "无异常阻断"}</span>
+          </div>
+          <div>
+            <strong>当前建议动作</strong>
+            <span>{order.abnormalContext?.nextStep || "当前没有异常处理建议。"}</span>
+          </div>
+          <div className="kv-grid-full">
+            <strong>当前异常原因</strong>
+            <span>{order.abnormalContext?.currentReason || "当前无活动异常原因。"}</span>
+          </div>
+          <div>
+            <strong>异常开始时间</strong>
+            <span>{order.abnormalContext?.currentSince || "暂无记录"}</span>
+          </div>
+          <div>
+            <strong>当前责任归属</strong>
+            <span>{order.abnormalContext?.currentOperator || "暂无记录"}</span>
+          </div>
+          <div>
+            <strong>最近标记异常</strong>
+            <span>{order.abnormalContext?.latestMarkedAt || "暂无记录"}</span>
+          </div>
+          <div>
+            <strong>最近标记人</strong>
+            <span>{order.abnormalContext?.latestMarkedOperator || "暂无记录"}</span>
+          </div>
+          <div className="kv-grid-full">
+            <strong>最近异常说明</strong>
+            <span>{order.abnormalContext?.latestMarkedReason || "暂无记录"}</span>
+          </div>
+          <div>
+            <strong>最近解除异常</strong>
+            <span>{order.abnormalContext?.latestResolvedAt || "暂无记录"}</span>
+          </div>
+          <div>
+            <strong>最近解除人</strong>
+            <span>{order.abnormalContext?.latestResolvedOperator || "暂无记录"}</span>
+          </div>
+          <div className="kv-grid-full">
+            <strong>最近解除说明</strong>
+            <span>{order.abnormalContext?.latestResolvedReason || "暂无记录"}</span>
+          </div>
+        </div>
+
+        <div className="two-col-grid">
+          <div className="version-card">
+            <div className="table-cell-stack">
+              <strong>当前阻塞项</strong>
+              <span className="muted">
+                {order.abnormalContext?.nextStep || "当前没有异常处理建议。"}
+              </span>
+            </div>
+            {abnormalBlockers.length > 0 ? (
+              <ul className="timeline-list">
+                {abnormalBlockers.map((item) => (
+                  <li key={item}>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="empty-state">
+                <strong>当前没有额外阻塞项。</strong>
+                <span className="muted">异常解除后可按主状态继续处理。</span>
+              </div>
+            )}
+          </div>
+
+          <div className="version-card">
+            <div className="table-cell-stack">
+              <strong>异常处理时间线</strong>
+              <span className="muted">按时间倒序展示规则命中、人工标记异常和解除异常记录。</span>
+            </div>
+            {abnormalHistory.length > 0 ? (
+              <ul className="timeline-list">
+                {abnormalHistory.map((item) => (
+                  <li key={item.id}>
+                    <span className="timeline-title">
+                      {item.title} · {item.operator}
+                    </span>
+                    <span>{item.detail}</span>
+                    <br />
+                    <span
+                      className={
+                        item.status === "ACTIVE"
+                          ? "status-pill status-pill-red"
+                          : item.status === "RESOLVED"
+                            ? "status-pill status-pill-green"
+                            : "status-pill status-pill-blue"
+                      }
+                    >
+                      {item.status === "ACTIVE"
+                        ? "异常标记"
+                        : item.status === "RESOLVED"
+                          ? "异常解除"
+                          : "规则命中"}
+                    </span>
+                    <span className="muted"> {item.createdAt}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="empty-state">
+                <strong>当前没有异常处理历史。</strong>
+                <span className="muted">后续标记异常、解除异常或规则命中后，会在这里留下链路记录。</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </SectionCard>
 
       <div className="two-col-grid">
         <SectionCard
@@ -225,6 +348,99 @@ export default async function OrderDetailPage({
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard
+        eyebrow="低代码运行时"
+        title="扩展字段渲染"
+        description="这里消费 /meta 发布后的实体、字段和页面配置。当前只读取已发布版本，草稿配置不会影响订单详情页。"
+      >
+        {extensionRuntime.ok ? (
+          <>
+            <div className="two-col-grid">
+              <div className="version-card">
+                <div className="table-cell-stack">
+                  <strong>当前生效配置</strong>
+                  <span className="muted">
+                    {extensionRuntime.entityCode} / {extensionRuntime.pageCode} · 实体 v
+                    {extensionRuntime.entityVersion} · 页面 v{extensionRuntime.pageVersion}
+                  </span>
+                </div>
+                <div className="kv-grid">
+                  <div>
+                    <strong>实体名称</strong>
+                    <span>{extensionRuntime.entityName}</span>
+                  </div>
+                  <div>
+                    <strong>页面类型</strong>
+                    <span>{extensionRuntime.pageType}</span>
+                  </div>
+                  <div>
+                    <strong>生效字段数</strong>
+                    <span>{extensionRuntime.fieldCount} 个</span>
+                  </div>
+                  <div>
+                    <strong>分组数量</strong>
+                    <span>{extensionRuntime.groups.length} 个</span>
+                  </div>
+                  <div className="kv-grid-full">
+                    <strong>加载说明</strong>
+                    <span>{extensionRuntime.message}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="version-card">
+                <div className="table-cell-stack">
+                  <strong>发布约束</strong>
+                  <span className="muted">运行时会自动忽略未发布字段，避免草稿配置直接影响线上页面。</span>
+                </div>
+                {extensionRuntime.warnings.length > 0 ? (
+                  <ul className="timeline-list">
+                    {extensionRuntime.warnings.map((warning) => (
+                      <li key={warning}>
+                        <span>{warning}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前页面引用字段均已发布。</strong>
+                    <span className="muted">可以继续在 /meta 中演进草稿版本，再按发布治理上线。</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {extensionRuntime.groups.map((group) => (
+              <div key={group.key} className="version-card">
+                <div className="table-cell-stack">
+                  <strong>{group.title}</strong>
+                  <span className="muted">{group.description || "按已发布字段配置渲染。"}</span>
+                </div>
+                <div className="kv-grid">
+                  {group.fields.map((field) => (
+                    <div key={field.fieldCode}>
+                      <strong>{field.name}</strong>
+                      <span>{field.displayValue}</span>
+                      <span className="muted">
+                        {field.fieldCode} · {field.type} · {field.sourceLabel}
+                        {field.required ? " · 必填" : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div className="empty-state">
+            <strong>{extensionRuntime.message}</strong>
+            <span className="muted">
+              当前订单详情仍可使用原有静态区块；待对应实体、字段和页面配置发布后，这里会自动切换到运行时渲染。
+            </span>
+          </div>
+        )}
+      </SectionCard>
 
       <SectionCard
         eyebrow="操作面板"
@@ -329,7 +545,10 @@ export default async function OrderDetailPage({
               <input type="hidden" name="action" value="clear-abnormal" />
               <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
               <span className="bullet-title">解除异常</span>
-              <p className="muted">异常处理完成后可解除标记，订单会继续按当前主状态流转。</p>
+              <p className="muted">
+                异常处理完成后可解除标记，订单会继续按当前主状态流转。
+                {order.abnormalContext?.nextStep ? ` ${order.abnormalContext.nextStep}` : ""}
+              </p>
               <input
                 className="text-input"
                 name="reason"

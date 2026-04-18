@@ -453,7 +453,8 @@ a {
 }
 
 .text-input,
-.select-input {
+.select-input,
+.file-input {
   width: 100%;
   min-height: 44px;
   padding: 0 14px;
@@ -487,10 +488,15 @@ a {
 
 .text-input:focus,
 .select-input:focus,
+.file-input:focus,
 .textarea-input:focus {
   outline: none;
   border-color: rgba(23, 104, 172, 0.56);
   box-shadow: 0 0 0 4px rgba(23, 104, 172, 0.12);
+}
+
+.file-input {
+  padding-top: 10px;
 }
 
 .checkbox-line {
@@ -520,6 +526,38 @@ a {
 .batch-panel {
   display: grid;
   gap: 18px;
+}
+
+.import-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.import-panel-main {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.1fr) minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.batch-feedback-card {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+  margin-bottom: 18px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(23, 104, 172, 0.05);
+  border: 1px solid rgba(23, 104, 172, 0.12);
+}
+
+.batch-feedback-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .batch-panel-main {
@@ -944,6 +982,7 @@ a {
   .designer-layout,
   .meta-form-grid,
   .batch-panel-main,
+  .import-panel-main,
   .auth-grid,
   .two-col-grid,
   .stats-grid,

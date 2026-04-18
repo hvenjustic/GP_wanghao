@@ -8,6 +8,16 @@ import { getMetaManagementOverview } from "@/server/services/meta-service";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
+type MetaHrefInput = {
+  entityId: string;
+  pageId?: string;
+  fieldId?: string;
+  entityDiffSnapshotId?: string;
+  fieldDiffSnapshotId?: string;
+  pageDiffId?: string;
+  anchor?: string;
+};
+
 function getSingleValue(value: string | string[] | undefined) {
   if (Array.isArray(value)) {
     return value[0] ?? "";
@@ -29,19 +39,66 @@ function getStatusClassName(status: string) {
   }
 }
 
-function buildPreviewHref(entityId: string, pageId?: string, fieldId?: string) {
+function getDiffKindClassName(kind: string) {
+  switch (kind) {
+    case "ADDED":
+      return "status-pill status-pill-green";
+    case "REMOVED":
+      return "status-pill status-pill-red";
+    case "CHANGED":
+      return "status-pill status-pill-amber";
+    default:
+      return "status-pill status-pill-blue";
+  }
+}
+
+function getDiffKindLabel(kind: string) {
+  switch (kind) {
+    case "ADDED":
+      return "新增";
+    case "REMOVED":
+      return "删除";
+    case "CHANGED":
+      return "变更";
+    default:
+      return kind;
+  }
+}
+
+function buildMetaHref(input: MetaHrefInput) {
   const query = new URLSearchParams();
-  query.set("entityPreviewId", entityId);
+  query.set("entityPreviewId", input.entityId);
 
-  if (pageId) {
-    query.set("pagePreviewId", pageId);
+  if (input.pageId) {
+    query.set("pagePreviewId", input.pageId);
   }
 
-  if (fieldId) {
-    query.set("fieldPreviewId", fieldId);
+  if (input.fieldId) {
+    query.set("fieldPreviewId", input.fieldId);
   }
 
-  return `/meta?${query.toString()}#preview`;
+  if (input.entityDiffSnapshotId) {
+    query.set("entityDiffSnapshotId", input.entityDiffSnapshotId);
+  }
+
+  if (input.fieldDiffSnapshotId) {
+    query.set("fieldDiffSnapshotId", input.fieldDiffSnapshotId);
+  }
+
+  if (input.pageDiffId) {
+    query.set("pageDiffId", input.pageDiffId);
+  }
+
+  return `/meta?${query.toString()}${input.anchor ? `#${input.anchor}` : ""}`;
+}
+
+function buildPreviewHref(entityId: string, pageId?: string, fieldId?: string) {
+  return buildMetaHref({
+    entityId,
+    pageId,
+    fieldId,
+    anchor: "preview"
+  });
 }
 
 export default async function MetaPage({
@@ -56,10 +113,16 @@ export default async function MetaPage({
   const previewEntityId = getSingleValue(params.entityPreviewId);
   const previewPageId = getSingleValue(params.pagePreviewId);
   const previewFieldId = getSingleValue(params.fieldPreviewId);
+  const entityDiffSnapshotId = getSingleValue(params.entityDiffSnapshotId);
+  const fieldDiffSnapshotId = getSingleValue(params.fieldDiffSnapshotId);
+  const pageDiffId = getSingleValue(params.pageDiffId);
   const overview = await getMetaManagementOverview({
     entityPreviewId: previewEntityId,
     pagePreviewId: previewPageId,
-    fieldPreviewId: previewFieldId
+    fieldPreviewId: previewFieldId,
+    entityDiffSnapshotId,
+    fieldDiffSnapshotId,
+    pageDiffId
   });
   const canManage = hasPermission(currentUser, "meta:manage");
 
@@ -391,6 +454,249 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        eyebrow="配置差异"
+        title="版本差异对比"
+        description="默认把当前焦点对象与最近可用的历史基线做对比。切换下方快照或版本后，可以直接看到字段、Schema 和状态差异。"
+      >
+        {overview.preview.entity ? (
+          <div id="diff" className="three-col-grid">
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>实体差异</strong>
+                <span className="muted">
+                  {overview.diffs.entity?.currentLabel ?? "当前没有实体焦点"}
+                </span>
+                <span className="muted">
+                  对比基线：{overview.diffs.entity?.baselineLabel ?? "暂无可对比快照"}
+                </span>
+              </div>
+
+              <div className="chip-row">
+                <span className="status-pill status-pill-blue">
+                  共 {overview.diffs.entity?.summary.total ?? 0} 项
+                </span>
+                <span className="status-pill status-pill-green">
+                  新增 {overview.diffs.entity?.summary.addedCount ?? 0}
+                </span>
+                <span className="status-pill status-pill-red">
+                  删除 {overview.diffs.entity?.summary.removedCount ?? 0}
+                </span>
+                <span className="status-pill status-pill-amber">
+                  变更 {overview.diffs.entity?.summary.changedCount ?? 0}
+                </span>
+              </div>
+
+              <div className="chip-row">
+                {overview.entitySnapshots
+                  .filter((snapshot) => snapshot.version !== overview.preview.entity?.version)
+                  .map((snapshot) => (
+                    <Link
+                      key={snapshot.id}
+                      href={buildMetaHref({
+                        entityId: overview.preview.entity?.id ?? "",
+                        pageId: overview.preview.page?.id,
+                        fieldId: overview.preview.field?.id,
+                        entityDiffSnapshotId: snapshot.id,
+                        fieldDiffSnapshotId: overview.diffs.field?.baselineId ?? undefined,
+                        pageDiffId: overview.diffs.page?.baselineId ?? undefined,
+                        anchor: "diff"
+                      })}
+                      className={
+                        snapshot.id === overview.diffs.entity?.baselineId
+                          ? "status-pill status-pill-blue"
+                          : "chip"
+                      }
+                    >
+                      实体快照 v{snapshot.version}
+                    </Link>
+                  ))}
+              </div>
+
+              {overview.diffs.entity?.entries.length ? (
+                <ul className="timeline-list">
+                  {overview.diffs.entity.entries.map((entry) => (
+                    <li key={`entity-diff-${entry.path}`}>
+                      <span className="timeline-title">
+                        {entry.path} ·{" "}
+                        <span className={getDiffKindClassName(entry.kind)}>
+                          {getDiffKindLabel(entry.kind)}
+                        </span>
+                      </span>
+                      <span className="muted">之前：{entry.before}</span>
+                      <br />
+                      <span className="muted">现在：{entry.after}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="empty-state">
+                  <strong>当前实体没有可展示的差异项。</strong>
+                  <span className="muted">如果没有历史快照或配置未变化，这里会保持空状态。</span>
+                </div>
+              )}
+            </div>
+
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>字段差异</strong>
+                <span className="muted">
+                  {overview.diffs.field?.currentLabel ?? "当前没有字段焦点"}
+                </span>
+                <span className="muted">
+                  对比基线：{overview.diffs.field?.baselineLabel ?? "暂无可对比快照"}
+                </span>
+              </div>
+
+              <div className="chip-row">
+                <span className="status-pill status-pill-blue">
+                  共 {overview.diffs.field?.summary.total ?? 0} 项
+                </span>
+                <span className="status-pill status-pill-green">
+                  新增 {overview.diffs.field?.summary.addedCount ?? 0}
+                </span>
+                <span className="status-pill status-pill-red">
+                  删除 {overview.diffs.field?.summary.removedCount ?? 0}
+                </span>
+                <span className="status-pill status-pill-amber">
+                  变更 {overview.diffs.field?.summary.changedCount ?? 0}
+                </span>
+              </div>
+
+              <div className="chip-row">
+                {overview.fieldSnapshots
+                  .filter((snapshot) => snapshot.version !== overview.preview.field?.version)
+                  .map((snapshot) => (
+                    <Link
+                      key={snapshot.id}
+                      href={buildMetaHref({
+                        entityId: overview.preview.entity?.id ?? "",
+                        pageId: overview.preview.page?.id,
+                        fieldId: overview.preview.field?.id,
+                        entityDiffSnapshotId: overview.diffs.entity?.baselineId ?? undefined,
+                        fieldDiffSnapshotId: snapshot.id,
+                        pageDiffId: overview.diffs.page?.baselineId ?? undefined,
+                        anchor: "diff"
+                      })}
+                      className={
+                        snapshot.id === overview.diffs.field?.baselineId
+                          ? "status-pill status-pill-blue"
+                          : "chip"
+                      }
+                    >
+                      字段快照 v{snapshot.version}
+                    </Link>
+                  ))}
+              </div>
+
+              {overview.diffs.field?.entries.length ? (
+                <ul className="timeline-list">
+                  {overview.diffs.field.entries.map((entry) => (
+                    <li key={`field-diff-${entry.path}`}>
+                      <span className="timeline-title">
+                        {entry.path} ·{" "}
+                        <span className={getDiffKindClassName(entry.kind)}>
+                          {getDiffKindLabel(entry.kind)}
+                        </span>
+                      </span>
+                      <span className="muted">之前：{entry.before}</span>
+                      <br />
+                      <span className="muted">现在：{entry.after}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="empty-state">
+                  <strong>当前字段没有可展示的差异项。</strong>
+                  <span className="muted">可以从字段快照中切换不同基线查看差异。</span>
+                </div>
+              )}
+            </div>
+
+            <div className="version-card">
+              <div className="table-cell-stack">
+                <strong>页面差异</strong>
+                <span className="muted">
+                  {overview.diffs.page?.currentLabel ?? "当前没有页面焦点"}
+                </span>
+                <span className="muted">
+                  对比基线：{overview.diffs.page?.baselineLabel ?? "暂无可对比版本"}
+                </span>
+              </div>
+
+              <div className="chip-row">
+                <span className="status-pill status-pill-blue">
+                  共 {overview.diffs.page?.summary.total ?? 0} 项
+                </span>
+                <span className="status-pill status-pill-green">
+                  新增 {overview.diffs.page?.summary.addedCount ?? 0}
+                </span>
+                <span className="status-pill status-pill-red">
+                  删除 {overview.diffs.page?.summary.removedCount ?? 0}
+                </span>
+                <span className="status-pill status-pill-amber">
+                  变更 {overview.diffs.page?.summary.changedCount ?? 0}
+                </span>
+              </div>
+
+              <div className="chip-row">
+                {overview.preview.pageGroup?.versions
+                  .filter((version) => version.id !== overview.preview.page?.id)
+                  .map((version) => (
+                    <Link
+                      key={version.id}
+                      href={buildMetaHref({
+                        entityId: overview.preview.entity?.id ?? "",
+                        pageId: overview.preview.page?.id,
+                        fieldId: overview.preview.field?.id,
+                        entityDiffSnapshotId: overview.diffs.entity?.baselineId ?? undefined,
+                        fieldDiffSnapshotId: overview.diffs.field?.baselineId ?? undefined,
+                        pageDiffId: version.id,
+                        anchor: "diff"
+                      })}
+                      className={
+                        version.id === overview.diffs.page?.baselineId
+                          ? "status-pill status-pill-blue"
+                          : "chip"
+                      }
+                    >
+                      页面 v{version.version}
+                    </Link>
+                  ))}
+              </div>
+
+              {overview.diffs.page?.entries.length ? (
+                <ul className="timeline-list">
+                  {overview.diffs.page.entries.map((entry) => (
+                    <li key={`page-diff-${entry.path}`}>
+                      <span className="timeline-title">
+                        {entry.path} ·{" "}
+                        <span className={getDiffKindClassName(entry.kind)}>
+                          {getDiffKindLabel(entry.kind)}
+                        </span>
+                      </span>
+                      <span className="muted">之前：{entry.before}</span>
+                      <br />
+                      <span className="muted">现在：{entry.after}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="empty-state">
+                  <strong>当前页面没有可展示的差异项。</strong>
+                  <span className="muted">如果只有一个页面版本或配置完全一致，这里会保持空状态。</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <strong>当前还没有可对比的低代码配置。</strong>
+            <span className="muted">请先选择实体、字段或页面，再查看版本差异。</span>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
         eyebrow="版本治理"
         title="页面发布、克隆与回滚"
         description="当前按“实体 + 页面编码”作为一个版本组进行治理。发布会自动替换当前线上版本，回滚会重新激活旧版本。"
@@ -444,6 +750,25 @@ prisma/
 
                       {canManage ? (
                         <div className="action-stack">
+                          {overview.preview.page?.id !== version.id ? (
+                            <Link
+                              href={buildMetaHref({
+                                entityId: overview.preview.entity?.id ?? version.entityId,
+                                pageId: overview.preview.page?.id,
+                                fieldId: overview.preview.field?.id,
+                                entityDiffSnapshotId:
+                                  overview.diffs.entity?.baselineId ?? undefined,
+                                fieldDiffSnapshotId:
+                                  overview.diffs.field?.baselineId ?? undefined,
+                                pageDiffId: version.id,
+                                anchor: "diff"
+                              })}
+                              className="button-secondary"
+                            >
+                              对比当前版本
+                            </Link>
+                          ) : null}
+
                           <form className="inline-form" action="/api/meta/page-versions" method="post">
                             <input type="hidden" name="action" value="clone-version" />
                             <input type="hidden" name="pageId" value={version.id} />
@@ -596,6 +921,20 @@ prisma/
                             </span>
                           ))}
                         </div>
+                        <Link
+                          href={buildMetaHref({
+                            entityId: overview.preview.entity?.id ?? "",
+                            pageId: overview.preview.page?.id,
+                            fieldId: overview.preview.field?.id,
+                            entityDiffSnapshotId: snapshot.id,
+                            fieldDiffSnapshotId: overview.diffs.field?.baselineId ?? undefined,
+                            pageDiffId: overview.diffs.page?.baselineId ?? undefined,
+                            anchor: "diff"
+                          })}
+                          className="button-secondary"
+                        >
+                          与当前实体对比
+                        </Link>
                         {canManage && snapshot.version !== overview.preview.entity?.version ? (
                           <form className="inline-form" action="/api/meta/entity-versions" method="post">
                             <input type="hidden" name="action" value="rollback" />
@@ -697,6 +1036,20 @@ prisma/
                             </span>
                           ))}
                         </div>
+                        <Link
+                          href={buildMetaHref({
+                            entityId: overview.preview.entity?.id ?? "",
+                            pageId: overview.preview.page?.id,
+                            fieldId: overview.preview.field?.id,
+                            entityDiffSnapshotId: overview.diffs.entity?.baselineId ?? undefined,
+                            fieldDiffSnapshotId: snapshot.id,
+                            pageDiffId: overview.diffs.page?.baselineId ?? undefined,
+                            anchor: "diff"
+                          })}
+                          className="button-secondary"
+                        >
+                          与当前字段对比
+                        </Link>
                         {canManage && snapshot.version !== overview.preview.field?.version ? (
                           <form className="inline-form" action="/api/meta/field-versions" method="post">
                             <input type="hidden" name="action" value="rollback" />

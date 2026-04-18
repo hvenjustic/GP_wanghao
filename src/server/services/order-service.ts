@@ -3,6 +3,8 @@ import type { OrderStatusCode } from "@/features/orders/config/order-states";
 import {
   getInitialOrderRecords,
   mockWarehouseCatalog,
+  type OrderAbnormalContext,
+  type OrderAbnormalHistoryEntry,
   type OrderAmountSummary,
   type OrderLogEntry,
   type OrderReceiver,
@@ -56,6 +58,24 @@ type PerformBulkOrderActionInput = {
   action: BatchOrderActionCode;
   session: AuthSession;
   payload?: PerformOrderActionInput["payload"];
+};
+
+export type BulkOrderActionItemResult = {
+  orderId: string;
+  orderNo: string;
+  ok: boolean;
+  message: string;
+};
+
+export type BulkOrderActionResult = {
+  ok: boolean;
+  message: string;
+  summary: {
+    total: number;
+    successCount: number;
+    failedCount: number;
+  };
+  items: BulkOrderActionItemResult[];
 };
 
 type ActionApplyResult =
@@ -219,6 +239,176 @@ function createManualLogEntry(
   };
 }
 
+function mapOperationLogToEntry(log: {
+  id: string;
+  type: string;
+  title: string | null;
+  action: string;
+  detail: string | null;
+  reason: string | null;
+  operatorName: string | null;
+  operatorId: string | null;
+  createdAt: Date;
+}): OrderLogEntry {
+  return {
+    id: log.id,
+    type: log.type === "SYSTEM" || log.type === "RULE" ? log.type : "MANUAL",
+    title: log.title ?? log.action,
+    detail: log.detail ?? log.reason ?? "-",
+    operator: log.operatorName ?? log.operatorId ?? "未知操作人",
+    createdAt: formatDateTime(log.createdAt)
+  };
+}
+
+function buildAbnormalNextStep(
+  record: Pick<OrderRecord, "isAbnormal" | "isLocked" | "status">
+) {
+  if (!record.isAbnormal) {
+    return "当前没有异常阻断，可按主状态继续处理。";
+  }
+
+  if (record.isLocked) {
+    return "先核实异常原因，处理完成后依次解除异常、解除锁单，再继续后续流转。";
+  }
+
+  if (record.status === "PENDING_WAREHOUSE") {
+    return "解除异常后可继续执行分仓。";
+  }
+
+  if (record.status === "PENDING_SHIPMENT") {
+    return "解除异常后可继续执行发货。";
+  }
+
+  if (["PENDING_REVIEW", "MANUAL_REVIEW"].includes(record.status)) {
+    return "解除异常后可继续审核。";
+  }
+
+  return "解除异常后按当前主状态继续处理。";
+}
+
+function buildAbnormalBlockers(
+  record: Pick<OrderRecord, "isAbnormal" | "isLocked" | "status">
+) {
+  if (!record.isAbnormal) {
+    return [] as string[];
+  }
+
+  const blockers: string[] = [];
+
+  if (record.isLocked) {
+    blockers.push("当前仍处于锁单状态，解除异常后还需要继续解除锁单。");
+  }
+
+  if (record.status === "PENDING_WAREHOUSE") {
+    blockers.push("异常处理完成后仍需继续分仓，订单才能进入待发货。");
+  }
+
+  if (record.status === "PENDING_SHIPMENT") {
+    blockers.push("异常处理完成后仍需继续录入物流并执行发货。");
+  }
+
+  if (["PENDING_REVIEW", "MANUAL_REVIEW"].includes(record.status)) {
+    blockers.push("异常处理完成后仍需继续审核，订单不会自动完结。");
+  }
+
+  return blockers;
+}
+
+function isAbnormalRuleHit(item: OrderRuleHit) {
+  return (
+    Boolean(item.decision && ["LOCK_ORDER", "BLOCK_SHIPMENT"].includes(item.decision)) ||
+    item.path.includes("异常") ||
+    item.result.includes("异常") ||
+    item.result.includes("锁单") ||
+    item.ruleName.includes("异常") ||
+    item.ruleName.includes("风险")
+  );
+}
+
+function buildAbnormalHistory(
+  record: Pick<OrderRecord, "logs" | "ruleHits">
+): OrderAbnormalHistoryEntry[] {
+  const manualItems = record.logs
+    .filter(
+      (item) => item.title.includes("标记异常") || item.title.includes("解除异常")
+    )
+    .map<OrderAbnormalHistoryEntry>((item) => ({
+      id: item.id,
+      title: item.title,
+      detail: item.detail,
+      operator: item.operator,
+      createdAt: item.createdAt,
+      status: item.title.includes("解除异常") ? "RESOLVED" : "ACTIVE"
+    }));
+
+  const ruleItems = record.ruleHits
+    .filter((item) => isAbnormalRuleHit(item))
+    .map<OrderAbnormalHistoryEntry>((item) => ({
+      id: item.id,
+      title: `${item.ruleName} · ${item.version}`,
+      detail: `${item.result}，路径：${item.path}`,
+      operator: "规则引擎",
+      createdAt: item.executedAt,
+      status: "RULE"
+    }));
+
+  return [...manualItems, ...ruleItems].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt)
+  );
+}
+
+function buildOrderAbnormalContext(
+  record: Pick<
+    OrderRecord,
+    "isAbnormal" | "isLocked" | "status" | "tags" | "notes" | "ruleHits" | "logs"
+  >
+): OrderAbnormalContext {
+  const history = buildAbnormalHistory(record);
+  const latestMarkedLog =
+    record.logs.find((item) => item.title.includes("标记异常")) ?? null;
+  const latestResolvedLog =
+    record.logs.find((item) => item.title.includes("解除异常")) ?? null;
+  const latestRuleHit = [...record.ruleHits]
+    .sort((left, right) => right.executedAt.localeCompare(left.executedAt))[0] ?? null;
+
+  const currentReason = record.isAbnormal
+    ? latestMarkedLog?.detail ??
+      (record.tags.includes("规则异常")
+        ? record.notes.system || latestRuleHit?.result || "规则命中异常条件。"
+        : record.notes.system || "当前订单处于异常处理状态。")
+    : null;
+
+  const currentOperator = record.isAbnormal
+    ? latestMarkedLog?.operator ??
+      (record.tags.includes("规则异常") ? "规则引擎" : null)
+    : null;
+
+  const currentSince = record.isAbnormal
+    ? latestMarkedLog?.createdAt ?? latestRuleHit?.executedAt ?? null
+    : null;
+
+  return {
+    currentReason,
+    currentOperator,
+    currentSince,
+    latestMarkedReason:
+      latestMarkedLog?.detail ??
+      (record.tags.includes("规则异常")
+        ? record.notes.system || latestRuleHit?.result || null
+        : null),
+    latestMarkedAt: latestMarkedLog?.createdAt ?? latestRuleHit?.executedAt ?? null,
+    latestMarkedOperator:
+      latestMarkedLog?.operator ??
+      (record.tags.includes("规则异常") ? "规则引擎" : null),
+    latestResolvedReason: latestResolvedLog?.detail ?? null,
+    latestResolvedAt: latestResolvedLog?.createdAt ?? null,
+    latestResolvedOperator: latestResolvedLog?.operator ?? null,
+    nextStep: buildAbnormalNextStep(record),
+    blockers: buildAbnormalBlockers(record),
+    history
+  };
+}
+
 function appendTag(record: OrderRecord, tag: string) {
   if (!record.tags.includes(tag)) {
     record.tags.push(tag);
@@ -278,6 +468,12 @@ async function fetchPrismaOrderListRaw(where: Prisma.OrderWhereInput) {
           createdAt: "desc"
         },
         take: 1
+      },
+      operationLogs: {
+        orderBy: {
+          createdAt: "desc"
+        },
+        take: 8
       }
     },
     orderBy: {
@@ -325,8 +521,8 @@ function toOrderStatusEnum(status: OrderStatusCode) {
 function mapPrismaOrderToRecord(order: PrismaOrderDetailPayload): OrderRecord {
   const extension = parseOrderExtension(order.extension);
   const latestShipment = order.shipments[0] ?? null;
-
-  return {
+  const logs = order.operationLogs.map(mapOperationLogToEntry);
+  const baseRecord = {
     id: order.id,
     orderNo: order.orderNo,
     sourceNo: order.sourceNo ?? "",
@@ -419,22 +615,28 @@ function mapPrismaOrderToRecord(order: PrismaOrderDetailPayload): OrderRecord {
         typeof extension.notes?.system === "string" ? extension.notes.system : ""
     },
     ruleHits: extension.ruleHits ?? [],
-    logs: order.operationLogs.map((log) => ({
-      id: log.id,
-      type:
-        log.type === "SYSTEM" || log.type === "RULE" ? log.type : "MANUAL",
-      title: log.title ?? log.action,
-      detail: log.detail ?? log.reason ?? "-",
-      operator: log.operatorName ?? log.operatorId ?? "未知操作人",
-      createdAt: formatDateTime(log.createdAt)
-    }))
+    logs
+  } satisfies Omit<OrderRecord, "abnormalContext">;
+
+  return {
+    ...baseRecord,
+    abnormalContext: buildOrderAbnormalContext(baseRecord)
   };
 }
 
 function mapPrismaOrderToListItem(order: PrismaOrderListPayload) {
   const extension = parseOrderExtension(order.extension);
-
-  return {
+  const notes = {
+    buyer:
+      typeof extension.notes?.buyer === "string" ? extension.notes.buyer : "",
+    service:
+      typeof extension.notes?.service === "string" ? extension.notes.service : "",
+    system:
+      typeof extension.notes?.system === "string" ? extension.notes.system : ""
+  };
+  const ruleHits = extension.ruleHits ?? [];
+  const logs = order.operationLogs.map(mapOperationLogToEntry);
+  const baseItem = {
     id: order.id,
     orderNo: order.orderNo,
     sourceChannel: order.sourceChannel ?? "未知来源",
@@ -446,6 +648,7 @@ function mapPrismaOrderToListItem(order: PrismaOrderListPayload) {
     phone:
       order.customer?.phone ??
       (typeof extension.receiver?.phone === "string" ? extension.receiver.phone : ""),
+    customerLevel: order.customer?.level ?? "未分级",
     status: order.status as OrderStatusCode,
     warehouseName: order.warehouse?.name ?? null,
     amount: Number(order.amount),
@@ -453,6 +656,30 @@ function mapPrismaOrderToListItem(order: PrismaOrderListPayload) {
     createdAt: formatDateTime(order.createdAt),
     isAbnormal: order.isAbnormal,
     isLocked: order.isLocked
+  } satisfies Omit<
+    OrderRecord,
+    | "sourceNo"
+    | "paymentStatus"
+    | "reviewMode"
+    | "warehouseCode"
+    | "receiver"
+    | "amountSummary"
+    | "shipment"
+    | "items"
+    | "notes"
+    | "ruleHits"
+    | "logs"
+    | "abnormalContext"
+  >;
+
+  return {
+    ...baseItem,
+    abnormalContext: buildOrderAbnormalContext({
+      ...baseItem,
+      notes,
+      ruleHits,
+      logs
+    })
   };
 }
 
@@ -470,8 +697,13 @@ function getActionAvailabilityFromPermissions(
   return {
     canApproveReview: canReview && isReviewStage && !order.isLocked,
     canRejectReview: canReview && isReviewStage && !order.isLocked,
-    canAssignWarehouse: canAssignWarehouse && isWarehouseStage && !order.isLocked,
-    canShip: canShip && order.status === "PENDING_SHIPMENT" && !order.isLocked,
+    canAssignWarehouse:
+      canAssignWarehouse && isWarehouseStage && !order.isLocked && !order.isAbnormal,
+    canShip:
+      canShip &&
+      order.status === "PENDING_SHIPMENT" &&
+      !order.isLocked &&
+      !order.isAbnormal,
     canLock:
       canReview &&
       !order.isLocked &&
@@ -638,6 +870,13 @@ function applyOrderActionToRecord(
         };
       }
 
+      if (nextRecord.isAbnormal) {
+        return {
+          ok: false,
+          message: "异常订单不能分仓，请先解除异常。"
+        };
+      }
+
       const warehouse = resolveWarehouseByCode(payload?.warehouseCode);
 
       if (!warehouse) {
@@ -678,6 +917,20 @@ function applyOrderActionToRecord(
         return {
           ok: false,
           message: "当前订单状态不允许发货。"
+        };
+      }
+
+      if (!nextRecord.warehouseCode) {
+        return {
+          ok: false,
+          message: "订单尚未完成分仓，不能直接发货。"
+        };
+      }
+
+      if (nextRecord.isAbnormal) {
+        return {
+          ok: false,
+          message: "异常订单不能发货，请先解除异常。"
         };
       }
 
@@ -816,20 +1069,36 @@ async function getOrderListFromMemory(filters: OrderListFilters) {
         .filter((item): item is string => Boolean(item))
     )
   );
+  const items = filteredOrders.map((order) => ({
+    id: order.id,
+    orderNo: order.orderNo,
+    sourceChannel: order.sourceChannel,
+    customerName: order.customerName,
+    phone: order.phone,
+    customerLevel: order.customerLevel,
+    status: order.status,
+    warehouseName: order.warehouseName,
+    amount: order.amount,
+    tags: [...order.tags],
+    createdAt: order.createdAt,
+    isAbnormal: order.isAbnormal,
+    isLocked: order.isLocked,
+    abnormalContext: buildOrderAbnormalContext(order)
+  }));
 
   return {
     dataSource: "内存演示数据",
-    items: cloneOrder(filteredOrders),
-    total: filteredOrders.length,
+    items,
+    total: items.length,
     sourceOptions,
     warehouseOptions,
     summary: {
-      total: filteredOrders.length,
-      abnormalCount: filteredOrders.filter((item) => item.isAbnormal).length,
-      reviewCount: filteredOrders.filter((item) =>
+      total: items.length,
+      abnormalCount: items.filter((item) => item.isAbnormal).length,
+      reviewCount: items.filter((item) =>
         ["PENDING_REVIEW", "MANUAL_REVIEW"].includes(item.status)
       ).length,
-      shipmentCount: filteredOrders.filter((item) => item.status === "PENDING_SHIPMENT")
+      shipmentCount: items.filter((item) => item.status === "PENDING_SHIPMENT")
         .length
     }
   };
@@ -838,7 +1107,12 @@ async function getOrderListFromMemory(filters: OrderListFilters) {
 async function getOrderDetailFromMemory(orderId: string) {
   const store = getOrderStore();
   const order = store.orders.find((item) => item.id === orderId);
-  return order ? cloneOrder(order) : null;
+  return order
+    ? {
+        ...cloneOrder(order),
+        abnormalContext: buildOrderAbnormalContext(order)
+      }
+    : null;
 }
 
 async function performOrderActionFromMemory(input: PerformOrderActionInput) {
@@ -1377,31 +1651,46 @@ export async function performOrderAction(input: PerformOrderActionInput) {
   );
 }
 
-export async function performBulkOrderAction(input: PerformBulkOrderActionInput) {
+export async function performBulkOrderAction(
+  input: PerformBulkOrderActionInput
+): Promise<BulkOrderActionResult> {
   const uniqueOrderIds = Array.from(new Set(input.orderIds.filter(Boolean)));
 
   if (uniqueOrderIds.length === 0) {
     return {
       ok: false,
-      message: "请至少选择一条订单。"
+      message: "请至少选择一条订单。",
+      summary: {
+        total: 0,
+        successCount: 0,
+        failedCount: 0
+      },
+      items: []
     };
   }
 
   const failures: string[] = [];
+  const itemResults: BulkOrderActionItemResult[] = [];
   let successCount = 0;
 
   for (const orderId of uniqueOrderIds) {
-    const orderDetail =
-      input.action === "ship-order" ? await getOrderDetail(orderId) : null;
+    const orderDetail = await getOrderDetail(orderId);
 
-    if (input.action === "ship-order" && !orderDetail) {
-      failures.push(`${orderId}: 订单不存在。`);
+    if (!orderDetail) {
+      const missingMessage = "订单不存在。";
+      failures.push(`${orderId}: ${missingMessage}`);
+      itemResults.push({
+        orderId,
+        orderNo: orderId,
+        ok: false,
+        message: missingMessage
+      });
       continue;
     }
 
     const trackingNo =
       input.action === "ship-order"
-        ? `${input.payload?.trackingPrefix?.trim() || "BATCH"}-${orderDetail?.orderNo.slice(-6)}`
+        ? `${input.payload?.trackingPrefix?.trim() || "BATCH"}-${orderDetail.orderNo.slice(-6)}`
         : input.payload?.trackingNo;
 
     const result = await performOrderAction({
@@ -1416,10 +1705,22 @@ export async function performBulkOrderAction(input: PerformBulkOrderActionInput)
 
     if (result.ok) {
       successCount += 1;
+      itemResults.push({
+        orderId,
+        orderNo: orderDetail.orderNo,
+        ok: true,
+        message: result.message
+      });
       continue;
     }
 
-    failures.push(`${orderId}: ${result.message}`);
+    failures.push(`${orderDetail.orderNo}: ${result.message}`);
+    itemResults.push({
+      orderId,
+      orderNo: orderDetail.orderNo,
+      ok: false,
+      message: result.message
+    });
   }
 
   const failedCount = failures.length;
@@ -1428,19 +1729,37 @@ export async function performBulkOrderAction(input: PerformBulkOrderActionInput)
   if (successCount === 0) {
     return {
       ok: false,
-      message: `批量处理失败。${summary} ${failures.slice(0, 3).join(" ")}`
+      message: `批量处理失败。${summary} ${failures.slice(0, 3).join(" ")}`,
+      summary: {
+        total: uniqueOrderIds.length,
+        successCount,
+        failedCount
+      },
+      items: itemResults
     };
   }
 
   if (failedCount > 0) {
     return {
       ok: true,
-      message: `批量处理部分成功。${summary} ${failures.slice(0, 3).join(" ")}`
+      message: `批量处理部分成功。${summary} ${failures.slice(0, 3).join(" ")}`,
+      summary: {
+        total: uniqueOrderIds.length,
+        successCount,
+        failedCount
+      },
+      items: itemResults
     };
   }
 
   return {
     ok: true,
-    message: `批量处理完成。${summary}`
+    message: `批量处理完成。${summary}`,
+    summary: {
+      total: uniqueOrderIds.length,
+      successCount,
+      failedCount
+    },
+    items: itemResults
   };
 }

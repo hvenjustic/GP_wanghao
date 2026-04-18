@@ -6,6 +6,7 @@ export type OrderListItem = {
   sourceChannel: string;
   customerName: string;
   phone: string;
+  customerLevel: string;
   status: OrderStatusCode;
   warehouseName: string | null;
   amount: number;
@@ -13,6 +14,7 @@ export type OrderListItem = {
   createdAt: string;
   isAbnormal: boolean;
   isLocked: boolean;
+  abnormalContext?: OrderAbnormalContext;
 };
 
 export type OrderLineItem = {
@@ -68,6 +70,30 @@ export type OrderLogEntry = {
   createdAt: string;
 };
 
+export type OrderAbnormalContext = {
+  currentReason?: string | null;
+  currentSince?: string | null;
+  currentOperator?: string | null;
+  latestMarkedReason?: string | null;
+  latestMarkedAt?: string | null;
+  latestMarkedOperator?: string | null;
+  latestResolvedReason?: string | null;
+  latestResolvedAt?: string | null;
+  latestResolvedOperator?: string | null;
+  nextStep?: string | null;
+  blockers?: string[];
+  history?: OrderAbnormalHistoryEntry[];
+};
+
+export type OrderAbnormalHistoryEntry = {
+  id: string;
+  title: string;
+  detail: string;
+  operator: string;
+  createdAt: string;
+  status: "ACTIVE" | "RESOLVED" | "RULE";
+};
+
 export type OrderRecord = OrderListItem & {
   sourceNo: string;
   customerLevel: string;
@@ -85,6 +111,7 @@ export type OrderRecord = OrderListItem & {
   };
   ruleHits: OrderRuleHit[];
   logs: OrderLogEntry[];
+  abnormalContext?: OrderAbnormalContext;
 };
 
 function createOrderLogEntry(

@@ -6,6 +6,7 @@ import {
   performBulkOrderAction,
   type BatchOrderActionCode
 } from "@/server/services/order-service";
+import { saveOrderBatchFeedback } from "@/server/services/order-batch-feedback-store";
 
 const batchOrderActionCodes: BatchOrderActionCode[] = [
   "approve-review",
@@ -75,6 +76,14 @@ export async function POST(request: NextRequest) {
 
   const targetUrl = new URL(redirectTo, request.url);
   targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
+  if (result.items.length > 0) {
+    const batchFeedbackId = saveOrderBatchFeedback({
+      action,
+      summary: result.summary,
+      items: result.items
+    });
+    targetUrl.searchParams.set("batchFeedbackId", batchFeedbackId);
+  }
 
   return NextResponse.redirect(targetUrl, { status: 303 });
 }
