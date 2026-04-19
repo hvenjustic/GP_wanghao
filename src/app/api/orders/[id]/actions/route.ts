@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import {
   performOrderAction,
   type OrderActionCode
@@ -44,9 +45,7 @@ export async function POST(
   const session = await getAuthSession();
 
   if (!session) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", `/orders/${id}`);
-    return NextResponse.redirect(loginUrl, { status: 303 });
+    return createRelativeRedirect(withQuery("/login", { redirect: `/orders/${id}` }), 303);
   }
 
   const formData = await request.formData();
@@ -57,9 +56,7 @@ export async function POST(
   );
 
   if (!orderActionCodes.includes(action)) {
-    const invalidUrl = new URL(redirectTo, request.url);
-    invalidUrl.searchParams.set("error", "不支持的订单操作。");
-    return NextResponse.redirect(invalidUrl, { status: 303 });
+    return createRelativeRedirect(withQuery(redirectTo, { error: "不支持的订单操作。" }), 303);
   }
 
   const result = await performOrderAction({
@@ -79,8 +76,8 @@ export async function POST(
   revalidatePath(`/orders/${id}`);
   revalidatePath("/rule-logs");
 
-  const targetUrl = new URL(redirectTo, request.url);
-  targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
-
-  return NextResponse.redirect(targetUrl, { status: 303 });
+  return createRelativeRedirect(
+    withQuery(redirectTo, { [result.ok ? "notice" : "error"]: result.message }),
+    303
+  );
 }

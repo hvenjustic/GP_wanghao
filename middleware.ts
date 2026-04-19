@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 import { parseAuthSession } from "@/lib/auth/cookie";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 
 function isPublicPath(pathname: string) {
   return (
@@ -26,14 +27,11 @@ export function middleware(request: NextRequest) {
   }
 
   if (!session) {
-    const loginUrl = new URL("/login", request.url);
     const redirectTarget = `${pathname}${search}`;
-
-    if (redirectTarget !== "/") {
-      loginUrl.searchParams.set("redirect", redirectTarget);
-    }
-
-    return NextResponse.redirect(loginUrl);
+    return createRelativeRedirect(
+      redirectTarget !== "/" ? withQuery("/login", { redirect: redirectTarget }) : "/login",
+      307
+    );
   }
   return NextResponse.next();
 }

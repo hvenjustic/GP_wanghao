@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { orderStateMap } from "@/features/orders/config/order-states";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { getOrderList, normalizeOrderFilters } from "@/server/services/order-service";
 
 function escapeCsvValue(value: string | number | null | undefined) {
@@ -32,15 +33,14 @@ export async function GET(request: NextRequest) {
   const session = await getAuthSession();
 
   if (!session) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
-    return NextResponse.redirect(loginUrl, { status: 303 });
+    return createRelativeRedirect(
+      withQuery("/login", { redirect: request.nextUrl.pathname + request.nextUrl.search }),
+      303
+    );
   }
 
   if (!hasPermission(session, "orders:view")) {
-    return NextResponse.redirect(new URL("/forbidden?required=orders:view", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: "orders:view" }), 303);
   }
 
   const filters = normalizeOrderFilters(

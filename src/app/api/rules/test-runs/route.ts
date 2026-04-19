@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { performRuleTestRunAction } from "@/server/services/rule-service";
 
 function getSingleFormValue(formData: FormData, key: string) {
@@ -13,15 +14,11 @@ export async function POST(request: NextRequest) {
   const session = await getAuthSession();
 
   if (!session) {
-    return NextResponse.redirect(new URL("/login?redirect=/rules", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/login", { redirect: "/rules" }), 303);
   }
 
   if (!hasPermission(session, "rules:manage")) {
-    return NextResponse.redirect(new URL("/forbidden?required=rules:manage", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: "rules:manage" }), 303);
   }
 
   const formData = await request.formData();
@@ -37,17 +34,12 @@ export async function POST(request: NextRequest) {
   revalidatePath("/rules");
   revalidatePath("/rule-logs");
 
-  const targetUrl = new URL("/rules", request.url);
-
-  if (result.ruleId) {
-    targetUrl.searchParams.set("ruleId", result.ruleId);
-  }
-
-  if (result.versionId) {
-    targetUrl.searchParams.set("versionId", result.versionId);
-  }
-
-  targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
-
-  return NextResponse.redirect(targetUrl, { status: 303 });
+  return createRelativeRedirect(
+    withQuery("/rules", {
+      ruleId: result.ruleId,
+      versionId: result.versionId,
+      [result.ok ? "notice" : "error"]: result.message
+    }),
+    303
+  );
 }

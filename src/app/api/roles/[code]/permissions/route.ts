@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   hasPermission,
   isRoleCode,
@@ -7,6 +7,7 @@ import {
   type PermissionCode
 } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { updateRolePermissions } from "@/server/services/user-service";
 
 type RouteParams = Promise<{
@@ -23,21 +24,15 @@ export async function POST(
   const { code } = await context.params;
 
   if (!session) {
-    return NextResponse.redirect(new URL("/login?redirect=/users", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/login", { redirect: "/users" }), 303);
   }
 
   if (!hasPermission(session, "users:manage")) {
-    return NextResponse.redirect(new URL("/forbidden?required=users:manage", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: "users:manage" }), 303);
   }
 
   if (!isRoleCode(code)) {
-    const invalidUrl = new URL("/users", request.url);
-    invalidUrl.searchParams.set("error", "无效的角色编码。");
-    return NextResponse.redirect(invalidUrl, { status: 303 });
+    return createRelativeRedirect(withQuery("/users", { error: "无效的角色编码。" }), 303);
   }
 
   const formData = await request.formData();
@@ -53,10 +48,10 @@ export async function POST(
 
   revalidatePath("/users");
 
-  const targetUrl = new URL("/users", request.url);
-  targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
-
-  return NextResponse.redirect(targetUrl, { status: 303 });
+  return createRelativeRedirect(
+    withQuery("/users", { [result.ok ? "notice" : "error"]: result.message }),
+    303
+  );
 }
 
 function isRolePermissionCode(value: string): value is PermissionCode {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { buildOrderImportTemplateCsv } from "@/server/services/order-import-service";
 
 function formatNowForFileName() {
@@ -16,15 +17,11 @@ export async function GET(request: NextRequest) {
   const session = await getAuthSession();
 
   if (!session) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", request.nextUrl.pathname);
-    return NextResponse.redirect(loginUrl, { status: 303 });
+    return createRelativeRedirect(withQuery("/login", { redirect: request.nextUrl.pathname }), 303);
   }
 
   if (!hasPermission(session, "orders:review")) {
-    return NextResponse.redirect(new URL("/forbidden?required=orders:review", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: "orders:review" }), 303);
   }
 
   const fileName = `order-import-template-${formatNowForFileName()}.csv`;

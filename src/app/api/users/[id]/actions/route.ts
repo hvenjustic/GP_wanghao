@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { performUserManagementAction } from "@/server/services/user-service";
 
 type RouteParams = Promise<{
@@ -23,15 +24,11 @@ export async function POST(
   const { id } = await context.params;
 
   if (!session) {
-    return NextResponse.redirect(new URL("/login?redirect=/users", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/login", { redirect: "/users" }), 303);
   }
 
   if (!hasPermission(session, "users:manage")) {
-    return NextResponse.redirect(new URL("/forbidden?required=users:manage", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: "users:manage" }), 303);
   }
 
   const formData = await request.formData();
@@ -39,9 +36,7 @@ export async function POST(
   const redirectTo = "/users";
 
   if (action !== "set-status" && action !== "set-role" && action !== "reset-password") {
-    const invalidUrl = new URL(redirectTo, request.url);
-    invalidUrl.searchParams.set("error", "不支持的用户管理操作。");
-    return NextResponse.redirect(invalidUrl, { status: 303 });
+    return createRelativeRedirect(withQuery(redirectTo, { error: "不支持的用户管理操作。" }), 303);
   }
 
   const result = await performUserManagementAction({
@@ -62,8 +57,8 @@ export async function POST(
 
   revalidatePath("/users");
 
-  const targetUrl = new URL(redirectTo, request.url);
-  targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
-
-  return NextResponse.redirect(targetUrl, { status: 303 });
+  return createRelativeRedirect(
+    withQuery(redirectTo, { [result.ok ? "notice" : "error"]: result.message }),
+    303
+  );
 }

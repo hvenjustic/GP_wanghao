@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { saveOrderImportFeedback } from "@/server/services/order-import-feedback-store";
 import { validateOrderImportCsv } from "@/server/services/order-import-service";
 
@@ -21,15 +22,11 @@ export async function POST(request: NextRequest) {
   const session = await getAuthSession();
 
   if (!session) {
-    return NextResponse.redirect(new URL("/login?redirect=/orders", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/login", { redirect: "/orders" }), 303);
   }
 
   if (!hasPermission(session, "orders:review")) {
-    return NextResponse.redirect(new URL("/forbidden?required=orders:review", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: "orders:review" }), 303);
   }
 
   const formData = await request.formData();
@@ -37,15 +34,11 @@ export async function POST(request: NextRequest) {
   const file = formData.get("importFile");
 
   if (!(file instanceof File) || file.size === 0) {
-    const invalidUrl = new URL(redirectTo, request.url);
-    invalidUrl.searchParams.set("error", "请选择需要校验的 CSV 模板文件。");
-    return NextResponse.redirect(invalidUrl, { status: 303 });
+    return createRelativeRedirect(withQuery(redirectTo, { error: "请选择需要校验的 CSV 模板文件。" }), 303);
   }
 
   if (file.size > 1024 * 1024) {
-    const invalidUrl = new URL(redirectTo, request.url);
-    invalidUrl.searchParams.set("error", "导入文件不能超过 1MB。");
-    return NextResponse.redirect(invalidUrl, { status: 303 });
+    return createRelativeRedirect(withQuery(redirectTo, { error: "导入文件不能超过 1MB。" }), 303);
   }
 
   const csvText = await file.text();
@@ -54,16 +47,17 @@ export async function POST(request: NextRequest) {
     content: csvText
   });
 
-  const targetUrl = new URL(redirectTo, request.url);
-  targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
+  const params: Record<string, string | undefined> = {
+    [result.ok ? "notice" : "error"]: result.message
+  };
 
   if (result.items.length > 0) {
     const feedbackId = saveOrderImportFeedback({
       summary: result.summary,
       items: result.items
     });
-    targetUrl.searchParams.set("importFeedbackId", feedbackId);
+    params.importFeedbackId = feedbackId;
   }
 
-  return NextResponse.redirect(targetUrl, { status: 303 });
+  return createRelativeRedirect(withQuery(redirectTo, params), 303);
 }

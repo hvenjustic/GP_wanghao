@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { hasPermission } from "@/lib/auth/types";
 import { getAuthSession } from "@/lib/auth/session";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import {
   performBulkOrderAction,
   type BatchOrderActionCode
@@ -32,9 +33,7 @@ export async function POST(request: NextRequest) {
   const session = await getAuthSession();
 
   if (!session) {
-    return NextResponse.redirect(new URL("/login?redirect=/orders", request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/login", { redirect: "/orders" }), 303);
   }
 
   const formData = await request.formData();
@@ -42,9 +41,7 @@ export async function POST(request: NextRequest) {
   const requiredPermission = action === "ship-order" ? "orders:ship" : "orders:review";
 
   if (!hasPermission(session, requiredPermission)) {
-    return NextResponse.redirect(new URL(`/forbidden?required=${requiredPermission}`, request.url), {
-      status: 303
-    });
+    return createRelativeRedirect(withQuery("/forbidden", { required: requiredPermission }), 303);
   }
   const redirectTo = getSafeRedirectTarget(getSingleFormValue(formData, "redirectTo"));
   const orderIds = formData
@@ -52,9 +49,7 @@ export async function POST(request: NextRequest) {
     .filter((item): item is string => typeof item === "string");
 
   if (!batchOrderActionCodes.includes(action)) {
-    const invalidUrl = new URL(redirectTo, request.url);
-    invalidUrl.searchParams.set("error", "不支持的批量订单操作。");
-    return NextResponse.redirect(invalidUrl, { status: 303 });
+    return createRelativeRedirect(withQuery(redirectTo, { error: "不支持的批量订单操作。" }), 303);
   }
 
   const result = await performBulkOrderAction({
@@ -74,16 +69,17 @@ export async function POST(request: NextRequest) {
     revalidatePath(`/orders/${orderId}`);
   }
 
-  const targetUrl = new URL(redirectTo, request.url);
-  targetUrl.searchParams.set(result.ok ? "notice" : "error", result.message);
+  const params: Record<string, string | undefined> = {
+    [result.ok ? "notice" : "error"]: result.message
+  };
   if (result.items.length > 0) {
     const batchFeedbackId = saveOrderBatchFeedback({
       action,
       summary: result.summary,
       items: result.items
     });
-    targetUrl.searchParams.set("batchFeedbackId", batchFeedbackId);
+    params.batchFeedbackId = batchFeedbackId;
   }
 
-  return NextResponse.redirect(targetUrl, { status: 303 });
+  return createRelativeRedirect(withQuery(redirectTo, params), 303);
 }

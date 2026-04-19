@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 import { getAuthCookieOptions, serializeAuthSession } from "@/lib/auth/cookie";
+import { createRelativeRedirect, withQuery } from "@/lib/http/redirect";
 import { authenticateUser } from "@/server/services/auth-service";
 import { createAuditLog } from "@/server/services/audit-service";
 
@@ -20,19 +20,16 @@ export async function POST(request: Request) {
   const result = await authenticateUser(email, password);
 
   if (!result.ok) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("error", result.code);
-
-    if (redirectTo !== "/") {
-      loginUrl.searchParams.set("redirect", redirectTo);
-    }
-
-    return NextResponse.redirect(loginUrl, { status: 303 });
+    return createRelativeRedirect(
+      withQuery("/login", {
+        error: result.code,
+        redirect: redirectTo !== "/" ? redirectTo : undefined
+      }),
+      303
+    );
   }
 
-  const response = NextResponse.redirect(new URL(redirectTo, request.url), {
-    status: 303
-  });
+  const response = createRelativeRedirect(redirectTo, 303);
 
   response.cookies.set({
     ...getAuthCookieOptions(),
