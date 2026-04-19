@@ -26,6 +26,7 @@
 - `已完成`：建立 `src/app`、`src/components`、`src/features`、`src/lib`、`src/server`、`prisma` 目录结构。
 - `已完成`：补充 `.env.example`、`.env.local`、`.env` 运行配置，默认使用远程 PostgreSQL。
 - `已完成`：完成 Prisma Client、`db:push`、`db:seed` 和基础健康检查接口 `/api/health`。
+- `已完成`：补充 `postinstall -> prisma generate`，减少 Ubuntu / Linux 部署时 Prisma Client 缺失导致的启动错误。
 
 ### 2.2 页面与交互骨架
 

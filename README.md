@@ -52,6 +52,8 @@ cp .env.example .env
 pnpm install
 ```
 
+`pnpm install` 完成后会自动执行 `prisma generate`。如果是从其他操作系统直接打包拷贝代码到当前机器，建议不要复用旧的 `node_modules` 和 `.next`，而是在当前机器重新安装依赖并重新生成 Prisma Client。
+
 3. 启动开发环境：
 
 ```bash
@@ -106,6 +108,20 @@ pnpm db:generate
 pnpm db:push
 pnpm db:seed
 ```
+
+## Ubuntu 部署注意事项
+
+- 不要把 macOS 或 Windows 上生成的 `node_modules` 直接拷到 Ubuntu 上复用。
+- 首次部署或依赖变更后，建议在 Ubuntu 上重新执行：
+
+```bash
+pnpm install
+pnpm db:generate
+pnpm db:push
+pnpm db:seed
+```
+
+- 如果启动时报 `Cannot find module '.prisma/client/default'`，通常表示 Prisma Client 没有在当前机器生成，重新执行 `pnpm install` 或 `pnpm db:generate` 即可。
 
 ## 文档入口
 
