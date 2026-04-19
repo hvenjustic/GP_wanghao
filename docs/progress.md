@@ -27,6 +27,8 @@
 - `已完成`：补充 `.env.example`、`.env.local`、`.env` 运行配置，默认使用远程 PostgreSQL。
 - `已完成`：完成 Prisma Client、`db:push`、`db:seed` 和基础健康检查接口 `/api/health`。
 - `已完成`：补充 `postinstall -> prisma generate`，减少 Ubuntu / Linux 部署时 Prisma Client 缺失导致的启动错误。
+- `已完成`：补充 `pm2` 生产进程配置、统一管理脚本和 Ubuntu 部署说明，支持使用 `pm2` 管理 Next.js 生产进程。
+- `已完成`：`pm2-manage.sh` 已放到项目根目录，服务器可直接执行 `./pm2-manage.sh` 管理进程。
 
 ### 2.2 页面与交互骨架
 

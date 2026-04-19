@@ -129,6 +129,7 @@ pnpm db:seed
 - [技术路线文档](docs/tech-roadmap.md)
 - [项目目标与阶段评估](docs/project-review.md)
 - [项目流程图](docs/project-flow.md)
+- [PM2 部署与管理说明](docs/pm2-deploy.md)
 - [开发任务清单](docs/dev-task-list.md)
 - [进度记录](docs/progress.md)
 
