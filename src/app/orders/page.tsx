@@ -164,8 +164,8 @@ export default async function OrdersPage({
         <div>
           <h1 className="app-header-title">订单列表页</h1>
           <p className="app-header-subtitle">
-            订单模块已经从展示骨架升级为带登录权限、筛选查询、角色动作和统计概览的真实列表页。
-            当前角色为 {currentUser.roleName}，数据源为 {orderResult.dataSource}。
+            支持订单筛选查询、角色动作、批量处理和异常识别。当前角色为 {currentUser.roleName}，
+            数据源为 {orderResult.dataSource}。
           </p>
         </div>
         <div className="app-header-meta">
@@ -202,7 +202,7 @@ export default async function OrdersPage({
       <SectionCard
         eyebrow="筛选条件"
         title="订单查询"
-        description="当前先实现服务端查询表单，后续可继续增强为高级筛选、保存视图和批量处理。"
+        description="按关键字段、状态、渠道和仓库筛选订单数据。"
         extra={
           <Link href={exportUrl} className="button-secondary">
             导出当前结果
@@ -284,7 +284,7 @@ export default async function OrdersPage({
         <SectionCard
           eyebrow="导入准备"
           title="订单导入模板与基础校验"
-          description="当前先提供模板下载、上传入口和服务端基础校验。此阶段不会直接写入数据库，主要用于校验导入内容是否符合系统要求。"
+          description="提供模板下载、上传入口和服务端基础校验，用于检查导入内容是否符合系统要求。"
           extra={
             <Link href={importTemplateUrl} className="button-secondary">
               下载导入模板

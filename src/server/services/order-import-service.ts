@@ -342,7 +342,7 @@ export async function validateOrderImportCsv(input: {
       ok: messages.length === 0,
       message:
         messages.length === 0
-          ? "基础校验通过，当前版本可进入后续入库流程。"
+          ? "基础校验通过，可继续处理该批订单数据。"
           : messages.join("；")
     };
   });
@@ -354,7 +354,7 @@ export async function validateOrderImportCsv(input: {
     ok: invalidRows === 0,
     message:
       invalidRows === 0
-        ? `导入校验通过，共 ${items.length} 行。当前版本已完成模板和校验能力，暂不直接入库。`
+        ? `导入校验通过，共 ${items.length} 行。当前仅执行校验，不直接写入订单数据。`
         : `导入校验完成，共 ${items.length} 行，通过 ${validRows} 行，失败 ${invalidRows} 行。`,
     summary: {
       totalRows: items.length,

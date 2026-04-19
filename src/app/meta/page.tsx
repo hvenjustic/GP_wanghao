@@ -211,7 +211,7 @@ export default async function MetaPage({
         <div>
           <h1 className="app-header-title">低代码配置平台</h1>
           <p className="app-header-subtitle">
-            当前页面已经接上数据库，并补了配置预览、页面发布、版本治理和回滚能力。第一版先把页面版本治理做稳，再逐步扩到更细的配置对象。
+            用于管理实体、字段、页面配置以及对应的预览、发布、版本治理和回滚操作。
           </p>
         </div>
         <div className="app-header-meta">
@@ -271,7 +271,7 @@ export default async function MetaPage({
         <SectionCard
           eyebrow="治理要求"
           title="配置生命周期"
-          description="当前先把页面版本的预览、发布、回滚做稳，再逐步扩到更细的对象粒度。"
+          description="通过预览、发布、回滚和版本记录管理配置生命周期。"
         >
           <ul className="timeline-list">
             <li>
@@ -292,7 +292,7 @@ export default async function MetaPage({
         <SectionCard
           eyebrow="建议目录"
           title="配置模块拆分方式"
-          description="目录先按领域拆，不按技术细枝末节拆，后续更容易维护。"
+          description="按实体、字段、页面和服务能力组织配置模块。"
         >
           <pre className="code-block">{`src/features/meta/
   config/
@@ -895,7 +895,7 @@ prisma/
                 ) : (
                   <div className="empty-state">
                     <strong>当前实体字段还没有规则引用。</strong>
-                    <span className="muted">后续规则图引用这些字段后，会自动出现在这里。</span>
+                    <span className="muted">规则图引用这些字段时，会自动出现在这里。</span>
                   </div>
                 )}
               </div>
@@ -1638,7 +1638,7 @@ prisma/
       <SectionCard
         eyebrow="字段配置"
         title="字段治理 CRUD"
-        description="字段编码建议按小写下划线命名，后续才能稳定地被页面 Schema 和规则节点引用。"
+        description="字段编码建议按小写下划线命名，便于页面 Schema 和规则节点统一引用。"
       >
         {canManage ? (
           <form className="meta-form-grid" action="/api/meta/fields" method="post">

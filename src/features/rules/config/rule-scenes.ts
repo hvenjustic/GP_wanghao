@@ -285,7 +285,7 @@ export const ruleNodeConfigTemplates = {
     result: "自动审核通过"
   },
   compute: {
-    description: "计算节点当前保留占位，后续会扩展变量计算和表达式。"
+    description: "计算节点用于承载中间变量、权重和优先级计算。"
   }
 } as const;
 
@@ -313,8 +313,8 @@ export const ruleNodeConfigSemantics = {
     "推荐字段：`result`、`decision`、`description`。"
   ],
   compute: [
-    "计算节点当前作为预留位，不参与真实执行。",
-    "后续会扩展变量计算、表达式和评分聚合。"
+    "计算节点用于描述变量计算和中间结果处理。",
+    "可用于整理评分、优先级和聚合结果。"
   ]
 } as const;
 

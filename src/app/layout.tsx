@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "面向中小电商的低代码订单管理系统",
-  description: "订单后台、低代码配置与规则编排的一体化项目骨架"
+  description: "订单后台、低代码配置与规则编排的一体化业务系统"
 };
 
 export default async function RootLayout({

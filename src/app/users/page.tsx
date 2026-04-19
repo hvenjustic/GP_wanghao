@@ -68,7 +68,7 @@ export default async function UsersPage({
       <SectionCard
         eyebrow="用户清单"
         title="账号状态与角色分配"
-        description="当前先提供最小可用的账号启停和角色调整能力，避免继续依赖固定演示账号。"
+        description="管理账号启停、角色归属和基础密码维护。"
       >
         <table className="data-table">
           <thead>
@@ -174,7 +174,7 @@ export default async function UsersPage({
       <SectionCard
         eyebrow="角色矩阵"
         title="角色与权限边界"
-        description="当前角色仍保持单角色模型，权限编辑会直接影响对应角色下用户的会话刷新结果。"
+        description="维护角色权限矩阵，并控制对应角色下用户的可访问范围。"
       >
         <div className="three-col-grid">
           {overview.roles.map((role) => (

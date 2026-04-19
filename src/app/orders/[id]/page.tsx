@@ -405,7 +405,7 @@ export default async function OrderDetailPage({
                 ) : (
                   <div className="empty-state">
                     <strong>当前页面引用字段均已发布。</strong>
-                    <span className="muted">可以继续在 /meta 中演进草稿版本，再按发布治理上线。</span>
+                    <span className="muted">如需调整字段展示，可在低代码配置页维护对应配置。</span>
                   </div>
                 )}
               </div>
@@ -436,7 +436,7 @@ export default async function OrderDetailPage({
           <div className="empty-state">
             <strong>{extensionRuntime.message}</strong>
             <span className="muted">
-              当前订单详情仍可使用原有静态区块；待对应实体、字段和页面配置发布后，这里会自动切换到运行时渲染。
+              对应实体、字段和页面配置发布后，这里会按运行时配置渲染扩展信息。
             </span>
           </div>
         )}
@@ -611,7 +611,7 @@ export default async function OrderDetailPage({
       <SectionCard
         eyebrow="商品明细"
         title="订单商品"
-        description="后续这里可以继续接 SKU 详情、库存联动和售后入口。"
+        description="展示订单商品、规格、数量、单价和小计信息。"
       >
         <table className="data-table">
           <thead>
@@ -694,7 +694,7 @@ export default async function OrderDetailPage({
         <SectionCard
           eyebrow="处理日志"
           title="人工 / 系统 / 规则日志"
-          description="每次状态流转都会落到数据库日志中，后续可继续升级为完整审计中心。"
+          description="记录订单状态流转、规则处理和人工操作过程。"
         >
           <ul className="timeline-list">
             {order.logs.map((item) => (

@@ -139,7 +139,7 @@ export default async function RulesPage({
         <div>
           <h1 className="app-header-title">规则编排引擎</h1>
           <p className="app-header-subtitle">
-            当前已经接通数据库、规则版本、试运行日志和可视化画布，并补上了节点配置语义、条件表达式库、多分支执行器，以及覆盖审核、分仓、发货前、人工重跑的内置样例规则。规则页现在不是占位说明，而是可直接创建、设计、发布、回滚和试运行的第一版工作台。
+            支持规则定义、版本管理、可视化设计、试运行、发布、回滚和执行日志查询。
           </p>
         </div>
         <div className="app-header-meta">
@@ -176,8 +176,8 @@ export default async function RulesPage({
       <div className="two-col-grid">
         <SectionCard
           eyebrow="触发场景"
-          title="当前规则触发点"
-          description="场景先围绕订单审核、分仓和发货前校验收敛，避免第一版过重。"
+          title="规则触发点"
+          description="按订单处理场景配置审核、分仓、发货校验和人工重跑规则。"
         >
           <table className="data-table">
             <thead>
@@ -202,7 +202,7 @@ export default async function RulesPage({
         <SectionCard
           eyebrow="节点模型"
           title="设计器支持的节点"
-          description="这一版先把同步条件判断、动作执行和结果输出做稳，再扩复杂计算节点。"
+          description="通过开始、条件、分支、动作、结果和计算节点描述规则执行路径。"
         >
           <div className="chip-row">
             {ruleNodeTypes.map((nodeType) => (
@@ -225,7 +225,7 @@ export default async function RulesPage({
       <SectionCard
         eyebrow="节点语义"
         title="规则节点配置 JSON 约定"
-        description="设计器里的节点配置不再是纯自由 JSON，而是围绕字段路径、条件表达式、条件操作符和动作语义做收敛，便于规则真正驱动订单动作链路。"
+        description="统一说明字段路径、条件表达式、操作符和动作语义的配置方式。"
       >
         <div className="two-col-grid">
           <div className="version-card">
@@ -408,7 +408,7 @@ export default async function RulesPage({
       <SectionCard
         eyebrow="示例规则"
         title="内置业务规则样例"
-        description="当前种子数据已补充审核、分仓、发货前和人工重跑四类已发布规则，便于直接演示不同触发场景下的配置方式和执行路径。"
+        description="展示审核、分仓、发货前校验和人工重跑等典型规则场景。"
       >
         {exampleRules.length > 0 ? (
           <div className="version-group-list">
@@ -455,8 +455,8 @@ export default async function RulesPage({
           </div>
         ) : (
           <div className="empty-state">
-            <strong>当前数据库还没有内置示例规则。</strong>
-            <span className="muted">执行 `pnpm db:seed` 后，会自动生成多条已发布业务样例规则。</span>
+            <strong>当前数据库还没有规则数据。</strong>
+            <span className="muted">请先初始化规则定义和版本数据。</span>
           </div>
         )}
       </SectionCard>

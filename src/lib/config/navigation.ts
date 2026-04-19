@@ -10,8 +10,8 @@ type NavigationItem = {
 export const navigationItems: NavigationItem[] = [
   {
     href: "/",
-    label: "项目总览",
-    description: "查看初始化状态、模块边界和下一步建议。",
+    label: "系统总览",
+    description: "查看系统能力概览和主要模块入口。",
     permission: "dashboard:view"
   },
   {

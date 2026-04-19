@@ -14,7 +14,7 @@ function getSingleValue(value: string | string[] | undefined) {
 
 function getLoginErrorMessage(errorCode: string) {
   if (errorCode === "invalid_credentials") {
-    return "账号或密码不正确，请检查输入或使用下方初始化账号登录。";
+    return "账号或密码不正确，请检查输入或使用下方账号登录。";
   }
 
   if (errorCode === "inactive_user") {
@@ -48,10 +48,9 @@ export default async function LoginPage({
     <div className="auth-page">
       <section className="auth-panel auth-panel-highlight">
         <span className="eyebrow">登录权限</span>
-        <h1 className="app-header-title">开始接通登录和权限控制</h1>
+        <h1 className="app-header-title">账号登录</h1>
         <p className="app-header-subtitle">
-          当前登录已经接入数据库中的用户、角色和权限关系。不同角色登录后，能看到的导航、
-          页面和订单操作都不相同。
+          系统根据数据库中的用户、角色和权限关系控制导航、页面访问和订单操作范围。
         </p>
       </section>
 
@@ -59,7 +58,7 @@ export default async function LoginPage({
         <section className="auth-panel">
           <h2>账号登录</h2>
           <p className="muted">
-            登录后即可访问项目总览和对应权限范围内的页面。未登录访问受保护页面会自动跳转到这里。
+            登录后可访问对应权限范围内的页面。未登录访问受保护页面时会自动跳转到这里。
           </p>
 
           <form action="/api/auth/login" method="post" className="auth-form">
@@ -71,7 +70,7 @@ export default async function LoginPage({
                 className="text-input"
                 type="email"
                 name="email"
-                placeholder="请输入初始化账号邮箱"
+                placeholder="请输入账号邮箱"
                 defaultValue="ops@gp.local"
                 required
               />
@@ -98,8 +97,8 @@ export default async function LoginPage({
         </section>
 
         <section className="auth-panel">
-          <h2>初始化账号</h2>
-          <p className="muted">这些账号已写入数据库，可以直接用来验证真实权限、导航和页面访问控制。</p>
+          <h2>示例账号</h2>
+          <p className="muted">这些账号已写入数据库，可用于登录不同角色并查看对应权限范围。</p>
 
           <ul className="demo-account-list">
             {demoUsers.map((user) => (
