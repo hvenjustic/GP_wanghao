@@ -83,7 +83,7 @@ chmod +x pm2-manage.sh
 说明：
 
 - `restart`：直接重启进程
-- `reload`：平滑重载，适合已有生产进程时更新代码后使用
+- `reload`：先执行 `pnpm build`，再平滑重载，适合代码更新后的常规发布
 - `delete`：从 `pm2` 进程列表中移除该应用
 - `logs`：实时查看日志
 - `save`：保存当前进程列表，供开机恢复使用
@@ -96,6 +96,12 @@ chmod +x pm2-manage.sh
 ```bash
 cd /root/wh_gp/GP_wanghao
 git pull
+./pm2-manage.sh reload
+```
+
+如果本次更新涉及依赖变化，再额外执行：
+
+```bash
 ./pm2-manage.sh install
 ./pm2-manage.sh reload
 ```
@@ -149,6 +155,7 @@ PM2_APP_NAME=gp-wh PORT=3001 HOST=0.0.0.0 ./pm2-manage.sh start
 
 - 生产环境不要再使用 `pnpm dev`，应使用 `pm2 + next start`。
 - 本脚本不会自动执行 `pnpm db:push` 或 `pnpm db:seed`，避免在普通发布流程中误改数据库。
+- `reload` 会自动重新 `build`，所以代码更新后优先执行 `./pm2-manage.sh reload`，不要直接手动执行 `pm2 reload gp-wanghao`。
 - 如果启动时报 `Cannot find module '.prisma/client/default'`，先重新执行：
 
 ```bash
