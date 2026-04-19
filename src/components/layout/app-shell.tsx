@@ -26,7 +26,6 @@ export function AppShell({ children, currentUser }: AppShellProps) {
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="app-brand">
-          <span className="app-brand-badge">GP</span>
           <div className="app-brand-title">低代码订单管理系统</div>
         </div>
 
