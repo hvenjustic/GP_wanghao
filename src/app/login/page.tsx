@@ -71,7 +71,7 @@ export default async function LoginPage({
                 type="email"
                 name="email"
                 placeholder="请输入账号邮箱"
-                defaultValue="ops@gp.local"
+                defaultValue="admin@gp.local"
                 required
               />
             </label>
@@ -83,7 +83,7 @@ export default async function LoginPage({
                 type="password"
                 name="password"
                 placeholder="请输入密码"
-                defaultValue="Ops123!"
+                defaultValue="Admin123!"
                 required
               />
             </label>
