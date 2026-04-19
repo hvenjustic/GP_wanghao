@@ -33,6 +33,7 @@
 - `已完成`：中间件、登录登出、订单、用户、低代码和规则接口的内部跳转已统一改为相对路径 `Location`，避免生产环境把浏览器错误重定向到 `0.0.0.0:3000`。
 - `已完成`：`pm2-manage.sh reload` 已改为自动执行 `pnpm build` 后再 `pm2 reload`，避免源码已更新但生产构建产物未同步的问题。
 - `已完成`：登录会话 Cookie 的 `secure` 策略改为按请求协议自动判断，并支持 `AUTH_COOKIE_SECURE` 覆盖，修复 HTTP 部署场景下登录成功后仍停留在登录页的问题。
+- `已完成`：`pm2-manage.sh reload` 已进一步收口为 `git pull --ff-only -> pnpm build -> pm2 reload`，减少服务器发布时手动拆步骤带来的遗漏。
 
 ### 2.2 页面与交互骨架
 

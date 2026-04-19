@@ -15,7 +15,7 @@ function usage() {
   install    安装依赖、生成 Prisma Client、构建生产包
   start      使用 pm2 启动项目
   restart    重启 pm2 中的项目进程
-  reload     重新构建生产包后平滑重载 pm2 进程
+  reload     先 git pull，再构建生产包并平滑重载 pm2 进程
   stop       停止 pm2 中的项目进程
   delete     从 pm2 中删除项目进程
   status     查看项目进程状态
@@ -53,6 +53,11 @@ function install_project() {
   run_in_root pnpm build
 }
 
+function pull_project() {
+  require_command git
+  run_in_root git pull --ff-only
+}
+
 function build_project() {
   require_command pnpm
   run_in_root pnpm build
@@ -78,6 +83,7 @@ case "$COMMAND" in
     ;;
   reload)
     ensure_pm2
+    pull_project
     build_project
     run_in_root pm2 reload "$APP_NAME" --update-env
     ;;
