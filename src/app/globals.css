@@ -592,11 +592,30 @@ a {
 .preview-card,
 .version-card {
   display: grid;
+  min-width: 0;
   gap: 14px;
   padding: 18px;
   border-radius: 18px;
   background: rgba(23, 104, 172, 0.04);
   border: 1px solid rgba(23, 104, 172, 0.1);
+}
+
+.version-card > *,
+.preview-card > * {
+  min-width: 0;
+}
+
+.timeline-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.timeline-list li span,
+.table-cell-stack span,
+.table-cell-stack strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .meta-form-grid {
