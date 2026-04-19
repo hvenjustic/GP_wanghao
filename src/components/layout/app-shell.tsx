@@ -28,9 +28,6 @@ export function AppShell({ children, currentUser }: AppShellProps) {
         <div className="app-brand">
           <span className="app-brand-badge">GP</span>
           <div className="app-brand-title">低代码订单管理系统</div>
-          <p className="app-brand-desc">
-            基于 Next.js、PostgreSQL、Prisma 和规则编排能力的一体化业务系统。
-          </p>
         </div>
 
         <nav className="app-nav" aria-label="主导航">
