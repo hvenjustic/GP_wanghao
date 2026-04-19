@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const response = createRelativeRedirect(redirectTo, 303);
 
   response.cookies.set({
-    ...getAuthCookieOptions(),
+    ...getAuthCookieOptions(request),
     name: AUTH_COOKIE_NAME,
     value: serializeAuthSession(result.session)
   });

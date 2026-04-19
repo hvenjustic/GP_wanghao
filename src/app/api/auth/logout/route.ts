@@ -4,7 +4,7 @@ import { createRelativeRedirect } from "@/lib/http/redirect";
 import { getAuthSession } from "@/lib/auth/session";
 import { createAuditLog } from "@/server/services/audit-service";
 
-export async function POST() {
+export async function POST(request: Request) {
   const session = await getAuthSession();
   const response = createRelativeRedirect("/login", 303);
 
@@ -22,7 +22,7 @@ export async function POST() {
   }
 
   response.cookies.set({
-    ...getAuthCookieOptions(),
+    ...getAuthCookieOptions(request),
     name: AUTH_COOKIE_NAME,
     value: "",
     maxAge: 0
