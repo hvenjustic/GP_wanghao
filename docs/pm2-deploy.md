@@ -120,10 +120,15 @@ git pull
 - 端口：`3000`
 - 启动方式：`next start`
 
+注意：
+
+- 不要使用 `HOSTNAME` 作为监听地址环境变量。Ubuntu 通常会自动注入系统主机名，例如 `VM-0-15-ubuntu`，这会导致 `next start` 绑定失败并被 `pm2` 持续拉起重启。
+- 如需自定义监听地址，请使用 `HOST`。
+
 如果需要自定义进程名或端口，可以在执行命令时带环境变量：
 
 ```bash
-PM2_APP_NAME=gp-wh PORT=3001 ./pm2-manage.sh start
+PM2_APP_NAME=gp-wh PORT=3001 HOST=0.0.0.0 ./pm2-manage.sh start
 ```
 
 ## 7. 开机自启
@@ -148,4 +153,11 @@ PM2_APP_NAME=gp-wh PORT=3001 ./pm2-manage.sh start
 
 ```bash
 ./pm2-manage.sh install
+```
+
+- 如果 `pm2 ls` 中进程反复 `online -> errored`，优先查看：
+
+```bash
+pm2 logs gp-wanghao --lines 100
+pm2 describe gp-wanghao
 ```

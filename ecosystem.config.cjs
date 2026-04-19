@@ -1,6 +1,6 @@
 const appName = process.env.PM2_APP_NAME ?? "gp-wanghao";
 const port = process.env.PORT ?? "3000";
-const host = process.env.HOSTNAME ?? "0.0.0.0";
+const host = process.env.HOST ?? "0.0.0.0";
 
 module.exports = {
   apps: [
@@ -17,7 +17,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: port,
-        HOSTNAME: host
+        HOST: host
       }
     }
   ]

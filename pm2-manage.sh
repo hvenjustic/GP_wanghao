@@ -28,7 +28,7 @@ function usage() {
 环境变量:
   PM2_APP_NAME  pm2 应用名，默认 gp-wanghao
   PORT          服务端口，默认 3000
-  HOSTNAME      监听地址，默认 0.0.0.0
+  HOST          监听地址，默认 0.0.0.0
 EOF
 }
 
@@ -65,15 +65,15 @@ case "$COMMAND" in
     ;;
   start)
     ensure_pm2
-    run_in_root pm2 start "$ECOSYSTEM_FILE" --only "$APP_NAME"
+    run_in_root pm2 start "$ECOSYSTEM_FILE" --only "$APP_NAME" --update-env
     ;;
   restart)
     ensure_pm2
-    run_in_root pm2 restart "$APP_NAME"
+    run_in_root pm2 restart "$APP_NAME" --update-env
     ;;
   reload)
     ensure_pm2
-    run_in_root pm2 reload "$APP_NAME"
+    run_in_root pm2 reload "$APP_NAME" --update-env
     ;;
   stop)
     ensure_pm2
@@ -102,7 +102,7 @@ case "$COMMAND" in
   bootstrap)
     install_project
     ensure_pm2
-    run_in_root pm2 start "$ECOSYSTEM_FILE" --only "$APP_NAME"
+    run_in_root pm2 start "$ECOSYSTEM_FILE" --only "$APP_NAME" --update-env
     ;;
   help|-h|--help)
     usage

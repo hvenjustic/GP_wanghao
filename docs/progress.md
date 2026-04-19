@@ -29,6 +29,7 @@
 - `已完成`：补充 `postinstall -> prisma generate`，减少 Ubuntu / Linux 部署时 Prisma Client 缺失导致的启动错误。
 - `已完成`：补充 `pm2` 生产进程配置、统一管理脚本和 Ubuntu 部署说明，支持使用 `pm2` 管理 Next.js 生产进程。
 - `已完成`：`pm2-manage.sh` 已放到项目根目录，服务器可直接执行 `./pm2-manage.sh` 管理进程。
+- `已完成`：修正 `pm2` 监听地址配置，改用 `HOST` 而不是 Ubuntu 系统环境变量 `HOSTNAME`，避免生产进程被错误主机名触发重启。
 
 ### 2.2 页面与交互骨架
 
