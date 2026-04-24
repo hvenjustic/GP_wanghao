@@ -18,7 +18,10 @@ import {
 } from "@/features/rules/lib/rule-explanation";
 import { prisma } from "@/lib/db/prisma";
 import { hasPermission, type AuthSession, type PermissionCode } from "@/lib/auth/types";
-import { executeOrderRulesForScene } from "@/server/services/order-rule-engine";
+import {
+  executeOrderRulesForScene,
+  type OrderRuleScene
+} from "@/server/services/order-rule-engine";
 
 export type OrderListFilters = {
   keyword: string;
@@ -1304,7 +1307,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
   let blockedByRules = false;
   const ruleExecutionResults: Array<
     Awaited<ReturnType<typeof executeOrderRulesForScene>> & {
-      scene: "订单创建后" | "审核通过后" | "发货前校验";
+      scene: OrderRuleScene;
     }
   > = [];
 
@@ -1376,7 +1379,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
         const postReviewRules = await executeOrderRulesForScene({
           tx,
           order: workingRecord,
-          scene: "订单创建后",
+          scene: "人工重跑",
           payload: input.payload,
           requestedAction: input.action
         });
@@ -1384,7 +1387,7 @@ async function performOrderActionFromPrisma(input: PerformOrderActionInput) {
         if (postReviewRules.hitItems.length > 0) {
           ruleExecutionResults.push({
             ...postReviewRules,
-            scene: "订单创建后"
+            scene: "人工重跑"
           });
         }
 

@@ -66,6 +66,7 @@ export default async function UsersPage({
       </div>
 
       <SectionCard
+        id="user-list"
         eyebrow="用户清单"
         title="账号状态与角色分配"
         description="管理账号启停、角色归属和基础密码维护。"
@@ -172,6 +173,7 @@ export default async function UsersPage({
       </SectionCard>
 
       <SectionCard
+        id="role-matrix"
         eyebrow="角色矩阵"
         title="角色与权限边界"
         description="维护角色权限矩阵，并控制对应角色下用户的可访问范围。"

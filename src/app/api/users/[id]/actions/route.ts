@@ -33,7 +33,7 @@ export async function POST(
 
   const formData = await request.formData();
   const action = getSingleFormValue(formData, "action");
-  const redirectTo = "/users";
+  const redirectTo = "/users#user-list";
 
   if (action !== "set-status" && action !== "set-role" && action !== "reset-password") {
     return createRelativeRedirect(withQuery(redirectTo, { error: "不支持的用户管理操作。" }), 303);

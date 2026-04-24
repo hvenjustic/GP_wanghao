@@ -32,7 +32,7 @@ export async function POST(
   }
 
   if (!isRoleCode(code)) {
-    return createRelativeRedirect(withQuery("/users", { error: "无效的角色编码。" }), 303);
+    return createRelativeRedirect(withQuery("/users#role-matrix", { error: "无效的角色编码。" }), 303);
   }
 
   const formData = await request.formData();
@@ -49,7 +49,7 @@ export async function POST(
   revalidatePath("/users");
 
   return createRelativeRedirect(
-    withQuery("/users", { [result.ok ? "notice" : "error"]: result.message }),
+    withQuery("/users#role-matrix", { [result.ok ? "notice" : "error"]: result.message }),
     303
   );
 }

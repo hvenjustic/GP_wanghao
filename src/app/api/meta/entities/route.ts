@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   const action = getSingleFormValue(formData, "action");
 
   if (action !== "create" && action !== "update" && action !== "delete") {
-    return createRelativeRedirect(withQuery("/meta", { error: "不支持的实体配置操作。" }), 303);
+    return createRelativeRedirect(withQuery("/meta#entity-crud", { error: "不支持的实体配置操作。" }), 303);
   }
 
   const result = await performMetaEntityAction({
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   revalidatePath("/meta");
 
   return createRelativeRedirect(
-    withQuery("/meta", { [result.ok ? "notice" : "error"]: result.message }),
+    withQuery("/meta#entity-crud", { [result.ok ? "notice" : "error"]: result.message }),
     303
   );
 }

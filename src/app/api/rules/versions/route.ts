@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   const action = getSingleFormValue(formData, "action") as RuleVersionAction;
 
   if (!["save-draft", "clone-version", "publish", "rollback"].includes(action)) {
-    return createRelativeRedirect(withQuery("/rules", { error: "不支持的规则版本操作。" }), 303);
+    return createRelativeRedirect(withQuery("/rules#designer", { error: "不支持的规则版本操作。" }), 303);
   }
 
   const result = await performRuleVersionAction({
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   revalidatePath("/rules");
 
   return createRelativeRedirect(
-    withQuery("/rules", {
+    withQuery("/rules#designer", {
       ruleId: result.ruleId,
       versionId: result.versionId,
       [result.ok ? "notice" : "error"]: result.message

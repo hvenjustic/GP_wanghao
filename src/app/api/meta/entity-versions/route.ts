@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const action = getSingleFormValue(formData, "action") as EntityVersionAction;
 
   if (action !== "publish" && action !== "rollback") {
-    return createRelativeRedirect(withQuery("/meta", { error: "不支持的实体版本治理操作。" }), 303);
+    return createRelativeRedirect(withQuery("/meta#meta-object-governance", { error: "不支持的实体版本治理操作。" }), 303);
   }
 
   const result = await performMetaEntityVersionAction({
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   revalidatePath("/meta");
 
   return createRelativeRedirect(
-    withQuery("/meta", { [result.ok ? "notice" : "error"]: result.message }),
+    withQuery("/meta#meta-object-governance", { [result.ok ? "notice" : "error"]: result.message }),
     303
   );
 }

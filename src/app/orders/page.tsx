@@ -142,6 +142,8 @@ export default async function OrdersPage({
   const extensionListRuntime = await getOrderExtensionListRuntime(orderResult.items);
   const extensionColumns = extensionListRuntime.ok ? extensionListRuntime.columns : [];
   const redirectTo = buildCurrentListUrl(rawSearchParams);
+  const importRedirectTo = `${redirectTo}#order-import`;
+  const batchRedirectTo = `${redirectTo}#order-batch-actions`;
   const exportUrl = buildOrderExportUrl(rawSearchParams);
   const importTemplateUrl = buildOrderImportTemplateUrl();
   const canBatchManage =
@@ -282,6 +284,7 @@ export default async function OrdersPage({
 
       {canImport ? (
         <SectionCard
+          id="order-import"
           eyebrow="导入准备"
           title="订单导入模板与基础校验"
           description="提供模板下载、上传入口和服务端基础校验，用于检查导入内容是否符合系统要求。"
@@ -352,7 +355,7 @@ export default async function OrdersPage({
             method="post"
             encType="multipart/form-data"
           >
-            <input type="hidden" name="redirectTo" value={redirectTo} />
+            <input type="hidden" name="redirectTo" value={importRedirectTo} />
             <div className="import-panel-main">
               <label className="form-field">
                 <span className="field-label">CSV 文件</span>
@@ -560,6 +563,7 @@ export default async function OrdersPage({
       </SectionCard>
 
       <SectionCard
+        id="order-batch-actions"
         eyebrow="查询结果"
         title="订单工作台"
         description={`当前共返回 ${orderResult.total} 条订单。行内动作会根据登录角色权限动态变化。${
@@ -626,7 +630,7 @@ export default async function OrdersPage({
 
         {canBatchManage ? (
           <form className="batch-panel" action="/api/orders/batch-actions" method="post">
-            <input type="hidden" name="redirectTo" value={redirectTo} />
+            <input type="hidden" name="redirectTo" value={batchRedirectTo} />
             <div className="batch-panel-main">
               <label className="form-field">
                 <span className="field-label">批量动作</span>

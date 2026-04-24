@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const action = getSingleFormValue(formData, "action") as RuleDefinitionAction;
 
   if (!["create", "update", "delete", "enable", "disable"].includes(action)) {
-    return createRelativeRedirect(withQuery("/rules", { error: "不支持的规则定义操作。" }), 303);
+    return createRelativeRedirect(withQuery("/rules#rule-catalog", { error: "不支持的规则定义操作。" }), 303);
   }
 
   const result = await performRuleDefinitionAction({
@@ -45,8 +45,10 @@ export async function POST(request: NextRequest) {
 
   revalidatePath("/rules");
 
+  const redirectAnchor = action === "create" || action === "delete" ? "rule-catalog" : "rule-config";
+
   return createRelativeRedirect(
-    withQuery("/rules", {
+    withQuery(`/rules#${redirectAnchor}`, {
       ruleId: result.ruleId,
       versionId: result.versionId,
       [result.ok ? "notice" : "error"]: result.message

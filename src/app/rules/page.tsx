@@ -42,7 +42,7 @@ function getRuleStatusClassName(status: string) {
   }
 }
 
-function buildRuleHref(ruleId: string, versionId?: string) {
+function buildRuleHref(ruleId: string, versionId?: string, anchor?: string) {
   const query = new URLSearchParams();
   query.set("ruleId", ruleId);
 
@@ -50,7 +50,7 @@ function buildRuleHref(ruleId: string, versionId?: string) {
     query.set("versionId", versionId);
   }
 
-  return `/rules?${query.toString()}#designer`;
+  return `/rules?${query.toString()}${anchor ? `#${anchor}` : ""}`;
 }
 
 function getExampleRuleNarrative(ruleCode: string) {
@@ -428,7 +428,7 @@ export default async function RulesPage({
 
                   <div className="action-stack">
                     <Link
-                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)}
+                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined, "designer")}
                       className="button-primary"
                     >
                       打开示例规则
@@ -467,23 +467,24 @@ export default async function RulesPage({
         </div>
       ) : null}
 
-      <SectionCard
-        eyebrow="规则目录"
-        title="规则定义与版本入口"
-        description="先创建规则定义，再在下方版本卡片和画布设计器里维护各个版本。"
-        extra={
-          <Link
-            href={
-              overview.selectedRule
-                ? `/rule-logs?ruleCode=${encodeURIComponent(overview.selectedRule.ruleCode)}`
-                : "/rule-logs"
-            }
-            className="button-secondary"
-          >
-            查看规则日志
-          </Link>
-        }
-      >
+      <div id="rule-catalog">
+        <SectionCard
+          eyebrow="规则目录"
+          title="规则定义与版本入口"
+          description="先创建规则定义，再在下方版本卡片和画布设计器里维护各个版本。"
+          extra={
+            <Link
+              href={
+                overview.selectedRule
+                  ? `/rule-logs?ruleCode=${encodeURIComponent(overview.selectedRule.ruleCode)}`
+                  : "/rule-logs"
+              }
+              className="button-secondary"
+            >
+              查看规则日志
+            </Link>
+          }
+        >
         {canManage ? (
           <form className="meta-form-grid" action="/api/rules/definitions" method="post">
             <input type="hidden" name="action" value="create" />
@@ -549,33 +550,61 @@ export default async function RulesPage({
           <tbody>
             {overview.rules.length > 0 ? (
               overview.rules.map((rule) => (
-                <tr key={rule.id}>
+                <tr
+                  key={rule.id}
+                  className={overview.selectedRule?.id === rule.id ? "data-table-row-selected" : undefined}
+                >
                   <td>
-                    <div className="table-cell-stack">
-                      <strong>{rule.name}</strong>
-                      <span className="muted">{rule.ruleCode}</span>
-                    </div>
+                    <Link
+                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)}
+                      className="table-row-link"
+                    >
+                      <div className="table-cell-stack">
+                        <strong>{rule.name}</strong>
+                        <span className="muted">{rule.ruleCode}</span>
+                      </div>
+                    </Link>
                   </td>
                   <td>
-                    <div className="table-cell-stack">
-                      <span className="status-pill status-pill-blue">{rule.type}</span>
-                      <span>{rule.scene}</span>
-                      <span className={getRuleStatusClassName(rule.status)}>{rule.status}</span>
-                    </div>
+                    <Link
+                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)}
+                      className="table-row-link"
+                    >
+                      <div className="table-cell-stack">
+                        <span className="status-pill status-pill-blue">{rule.type}</span>
+                        <span>{rule.scene}</span>
+                        <span className={getRuleStatusClassName(rule.status)}>{rule.status}</span>
+                      </div>
+                    </Link>
                   </td>
                   <td>
-                    <div className="table-cell-stack">
-                      <span>{rule.versionCount} 个版本</span>
-                      <span className="muted">
-                        {rule.activeVersion ? `当前线上 v${rule.activeVersion}` : "尚未发布"}
-                      </span>
-                      <span className="muted">草稿 {rule.draftCount} 个</span>
-                    </div>
+                    <Link
+                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)}
+                      className="table-row-link"
+                    >
+                      <div className="table-cell-stack">
+                        <span>{rule.versionCount} 个版本</span>
+                        <span className="muted">
+                          {rule.activeVersion ? `当前线上 v${rule.activeVersion}` : "尚未发布"}
+                        </span>
+                        <span className="muted">草稿 {rule.draftCount} 个</span>
+                      </div>
+                    </Link>
                   </td>
-                  <td>{rule.updatedAt}</td>
+                  <td>
+                    <Link
+                      href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)}
+                      className="table-row-link"
+                    >
+                      {rule.updatedAt}
+                    </Link>
+                  </td>
                   <td>
                     <div className="action-stack">
-                      <Link href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined)} className="button-secondary">
+                      <Link
+                        href={buildRuleHref(rule.id, rule.activeVersionId ?? undefined, "designer")}
+                        className="button-secondary"
+                      >
                         打开设计器
                       </Link>
                       <Link
@@ -609,15 +638,17 @@ export default async function RulesPage({
             )}
           </tbody>
         </table>
-      </SectionCard>
+        </SectionCard>
+      </div>
 
       {overview.selectedRule ? (
         <>
-          <SectionCard
-            eyebrow="规则配置"
-            title={`${overview.selectedRule.name} · ${overview.selectedRule.ruleCode}`}
-            description="规则定义层负责编码、名称、状态和启停治理；真正可运行的结构在版本和画布里维护。"
-          >
+          <div id="rule-config">
+            <SectionCard
+              eyebrow="规则配置"
+              title={`${overview.selectedRule.name} · ${overview.selectedRule.ruleCode}`}
+              description="规则定义层负责编码、名称、状态和启停治理；真正可运行的结构在版本和画布里维护。"
+            >
             <div className="two-col-grid">
               <div className="version-card">
                 <div className="table-cell-stack">
@@ -756,13 +787,15 @@ export default async function RulesPage({
                 </div>
               ) : null}
             </div>
-          </SectionCard>
+            </SectionCard>
+          </div>
 
-          <SectionCard
-            eyebrow="版本治理"
-            title="规则版本、发布与回滚"
-            description="规则版本默认不可直接覆盖线上版本；对当前发布版本做编辑时，保存会自动另存为新草稿。"
-          >
+          <div id="rule-versions">
+            <SectionCard
+              eyebrow="版本治理"
+              title="规则版本、发布与回滚"
+              description="规则版本默认不可直接覆盖线上版本；对当前发布版本做编辑时，保存会自动另存为新草稿。"
+            >
             {overview.versionItems.length > 0 ? (
               <div className="version-group-list">
                 {overview.versionItems.map((version) => (
@@ -783,7 +816,7 @@ export default async function RulesPage({
                         {version.publishNote ? <span className="muted">{version.publishNote}</span> : null}
                       </div>
                       <Link
-                        href={buildRuleHref(overview.selectedRule?.id ?? "", version.id)}
+                        href={buildRuleHref(overview.selectedRule?.id ?? "", version.id, "designer")}
                         className="button-secondary"
                       >
                         选择此版本
@@ -868,7 +901,8 @@ export default async function RulesPage({
                 <span className="muted">创建规则后会自动生成一个初始草稿版本。</span>
               </div>
             )}
-          </SectionCard>
+            </SectionCard>
+          </div>
 
           <div id="designer">
             <SectionCard
@@ -963,11 +997,12 @@ export default async function RulesPage({
             </SectionCard>
           </div>
 
-          <SectionCard
-            eyebrow="试运行"
-            title="样例输入与最近执行"
-            description="试运行会把输入、输出和命中路径写入规则日志，便于发布前验证图结构。"
-          >
+          <div id="test-run">
+            <SectionCard
+              eyebrow="试运行"
+              title="样例输入与最近执行"
+              description="试运行会把输入、输出和命中路径写入规则日志，便于发布前验证图结构。"
+            >
             {overview.selectedVersion ? (
               <div className="two-col-grid">
                 <form className="version-card" action="/api/rules/test-runs" method="post">
@@ -1036,7 +1071,8 @@ export default async function RulesPage({
                 <span className="muted">试运行依赖版本图结构和样例输入。</span>
               </div>
             )}
-          </SectionCard>
+            </SectionCard>
+          </div>
         </>
       ) : null}
     </div>

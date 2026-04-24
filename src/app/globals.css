@@ -355,6 +355,18 @@ a {
   color: var(--brand);
 }
 
+.table-row-link {
+  color: inherit;
+  display: block;
+  margin: -14px -12px;
+  padding: 14px 12px;
+  text-decoration: none;
+}
+
+.table-row-link:hover {
+  color: var(--brand);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -377,6 +389,10 @@ a {
 
 .data-table td {
   line-height: 1.6;
+}
+
+.data-table-row-selected td {
+  background: rgba(23, 104, 172, 0.08);
 }
 
 .table-checkbox {

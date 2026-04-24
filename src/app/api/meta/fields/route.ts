@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   const action = getSingleFormValue(formData, "action");
 
   if (action !== "create" && action !== "update" && action !== "delete") {
-    return createRelativeRedirect(withQuery("/meta", { error: "不支持的字段配置操作。" }), 303);
+    return createRelativeRedirect(withQuery("/meta#field-crud", { error: "不支持的字段配置操作。" }), 303);
   }
 
   const result = await performMetaFieldAction({
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
   revalidatePath("/meta");
 
   return createRelativeRedirect(
-    withQuery("/meta", { [result.ok ? "notice" : "error"]: result.message }),
+    withQuery("/meta#field-crud", { [result.ok ? "notice" : "error"]: result.message }),
     303
   );
 }

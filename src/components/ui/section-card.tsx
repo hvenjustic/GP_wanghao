@@ -1,6 +1,7 @@
 import type { PropsWithChildren, ReactNode } from "react";
 
 type SectionCardProps = PropsWithChildren<{
+  id?: string;
   eyebrow?: string;
   title: string;
   description?: string;
@@ -8,6 +9,7 @@ type SectionCardProps = PropsWithChildren<{
 }>;
 
 export function SectionCard({
+  id,
   eyebrow,
   title,
   description,
@@ -15,7 +17,7 @@ export function SectionCard({
   children
 }: SectionCardProps) {
   return (
-    <section className="surface-card">
+    <section id={id} className="surface-card">
       {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
       <div
         style={{

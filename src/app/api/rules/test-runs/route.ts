@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   revalidatePath("/rule-logs");
 
   return createRelativeRedirect(
-    withQuery("/rules", {
+    withQuery("/rules#test-run", {
       ruleId: result.ruleId,
       versionId: result.versionId,
       [result.ok ? "notice" : "error"]: result.message

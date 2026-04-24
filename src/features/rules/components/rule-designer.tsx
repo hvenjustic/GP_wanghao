@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   addEdge,
   Background,
@@ -117,6 +117,7 @@ export function RuleDesigner({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
   const [selectedNodeId, setSelectedNodeId] = useState(initialGraph.nodes[0]?.id ?? "");
   const [configText, setConfigText] = useState("{}");
+  const configDraftsRef = useRef<Record<string, string>>({});
   const [configError, setConfigError] = useState("");
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
@@ -152,9 +153,31 @@ export function RuleDesigner({
       return;
     }
 
-    setConfigText(JSON.stringify(selectedNode.data.config ?? {}, null, 2));
+    setConfigText(
+      configDraftsRef.current[selectedNode.id] ??
+        JSON.stringify(selectedNode.data.config ?? {}, null, 2)
+    );
     setConfigError("");
   }, [selectedNodeId, selectedNode]);
+
+  function updateNodeConfig(
+    nodeId: string,
+    config: RuleGraphNode["data"]["config"] | undefined
+  ) {
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                config
+              }
+            }
+          : node
+      )
+    );
+  }
 
   function handleAddNode(kind: RuleNodeKind) {
     if (readOnly) {
@@ -204,42 +227,42 @@ export function RuleDesigner({
     const trimmed = configText.trim();
 
     if (!trimmed) {
-      setNodes((currentNodes) =>
-        currentNodes.map((node) =>
-          node.id === selectedNode.id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  config: undefined
-                }
-              }
-            : node
-        )
-      );
+      updateNodeConfig(selectedNode.id, undefined);
       setConfigError("");
       return;
     }
 
     try {
       const parsed = JSON.parse(trimmed) as RuleGraphNode["data"]["config"];
-
-      setNodes((currentNodes) =>
-        currentNodes.map((node) =>
-          node.id === selectedNode.id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  config: parsed
-                }
-              }
-            : node
-        )
-      );
+      updateNodeConfig(selectedNode.id, parsed);
       setConfigError("");
     } catch {
       setConfigError("节点配置 JSON 解析失败，请输入合法对象。");
+    }
+  }
+
+  function handleConfigTextChange(value: string) {
+    setConfigText(value);
+
+    if (!selectedNode || readOnly) {
+      return;
+    }
+
+    configDraftsRef.current[selectedNode.id] = value;
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      updateNodeConfig(selectedNode.id, undefined);
+      setConfigError("");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed) as RuleGraphNode["data"]["config"];
+      updateNodeConfig(selectedNode.id, parsed);
+      setConfigError("");
+    } catch {
+      // Keep the per-node draft while the user is still typing invalid JSON.
     }
   }
 
@@ -249,7 +272,10 @@ export function RuleDesigner({
     }
 
     const template = getTemplateConfig(selectedNode.data.kind, scene);
-    setConfigText(JSON.stringify(template ?? {}, null, 2));
+    const nextText = JSON.stringify(template ?? {}, null, 2);
+    setConfigText(nextText);
+    configDraftsRef.current[selectedNode.id] = nextText;
+    updateNodeConfig(selectedNode.id, template);
     setConfigError("");
   }
 
@@ -372,7 +398,7 @@ export function RuleDesigner({
                 <textarea
                   className="textarea-input"
                   value={configText}
-                  onChange={(event) => setConfigText(event.target.value)}
+                  onChange={(event) => handleConfigTextChange(event.target.value)}
                   readOnly={readOnly}
                 />
               </label>

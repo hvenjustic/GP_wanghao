@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const action = getSingleFormValue(formData, "action") as PageVersionAction;
 
   if (action !== "publish" && action !== "clone-version" && action !== "rollback") {
-    return createRelativeRedirect(withQuery("/meta", { error: "不支持的页面版本治理操作。" }), 303);
+    return createRelativeRedirect(withQuery("/meta#page-version-governance", { error: "不支持的页面版本治理操作。" }), 303);
   }
 
   const targetVersionText = getSingleFormValue(formData, "targetVersion");
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   revalidatePath("/meta");
 
   return createRelativeRedirect(
-    withQuery("/meta", { [result.ok ? "notice" : "error"]: result.message }),
+    withQuery("/meta#page-version-governance", { [result.ok ? "notice" : "error"]: result.message }),
     303
   );
 }

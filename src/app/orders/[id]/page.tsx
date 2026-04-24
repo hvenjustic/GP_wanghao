@@ -443,6 +443,7 @@ export default async function OrderDetailPage({
       </SectionCard>
 
       <SectionCard
+        id="order-actions"
         eyebrow="操作面板"
         title="状态流转与人工处理"
         description="动作会直接写入数据库中的订单、物流、操作日志和审计日志。"
@@ -451,7 +452,7 @@ export default async function OrderDetailPage({
           {availability.canApproveReview ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="approve-review" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">审核通过</span>
               <p className="muted">适用于待审核或人工审核且未锁单的订单。</p>
               <input className="text-input" name="reason" placeholder="可选：填写审核通过说明" />
@@ -464,7 +465,7 @@ export default async function OrderDetailPage({
           {availability.canRejectReview ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="reject-review" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">审核驳回</span>
               <p className="muted">驳回后订单会进入已取消，并写入人工处理日志。</p>
               <input
@@ -482,7 +483,7 @@ export default async function OrderDetailPage({
           {availability.canAssignWarehouse ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="assign-warehouse" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">手工分仓</span>
               <p className="muted">当前状态允许手工分配仓库，成功后将流转到待发货。</p>
               <select className="select-input" name="warehouseCode" defaultValue="">
@@ -510,7 +511,7 @@ export default async function OrderDetailPage({
           {availability.canShip ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="ship-order" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">执行发货</span>
               <p className="muted">录入物流公司和物流单号后，订单将进入已发货。</p>
               <input className="text-input" name="shippingCompany" placeholder="物流公司，例如 顺丰速运" />
@@ -525,7 +526,7 @@ export default async function OrderDetailPage({
           {availability.canMarkAbnormal ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="mark-abnormal" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">标记异常</span>
               <p className="muted">用于标记需要重点处理或人工介入的订单，不改变主流程状态。</p>
               <input
@@ -543,7 +544,7 @@ export default async function OrderDetailPage({
           {availability.canClearAbnormal ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="clear-abnormal" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">解除异常</span>
               <p className="muted">
                 异常处理完成后可解除标记，订单会继续按当前主状态流转。
@@ -564,7 +565,7 @@ export default async function OrderDetailPage({
           {availability.canLock ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="lock-order" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">锁单</span>
               <p className="muted">锁单后将阻断审核通过、分仓和发货等后续动作。</p>
               <input
@@ -582,7 +583,7 @@ export default async function OrderDetailPage({
           {availability.canUnlock ? (
             <form className="operation-card" action={`/api/orders/${order.id}/actions`} method="post">
               <input type="hidden" name="action" value="unlock-order" />
-              <input type="hidden" name="redirectTo" value={`/orders/${order.id}`} />
+              <input type="hidden" name="redirectTo" value={`/orders/${order.id}#order-actions`} />
               <span className="bullet-title">解除锁单</span>
               <p className="muted">解除锁单后，订单可恢复审核、分仓或发货操作。</p>
               <input

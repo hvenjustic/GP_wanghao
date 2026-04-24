@@ -1081,6 +1081,7 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        id="page-version-governance"
         eyebrow="版本治理"
         title="页面发布、克隆与回滚"
         description="当前按“实体 + 页面编码”作为一个版本组进行治理。发布会自动替换当前线上版本，回滚会重新激活旧版本。"
@@ -1246,6 +1247,7 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        id="meta-object-governance"
         eyebrow="治理能力"
         title="实体与字段级版本治理"
         description="实体和字段当前采用“当前配置 + 快照历史”模式治理。当前行上的版本号表示最新配置版本，历史快照用于回滚和审计。"
@@ -1481,6 +1483,7 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        id="entity-crud"
         eyebrow="实体配置"
         title="实体建模 CRUD"
         description="实体是字段和页面配置的挂载点。实体编码建议保持稳定，不要随意重命名。"
@@ -1636,6 +1639,7 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        id="field-crud"
         eyebrow="字段配置"
         title="字段治理 CRUD"
         description="字段编码建议按小写下划线命名，便于页面 Schema 和规则节点统一引用。"
@@ -1837,6 +1841,7 @@ prisma/
       </SectionCard>
 
       <SectionCard
+        id="page-crud"
         eyebrow="页面配置"
         title="页面 Schema CRUD"
         description="当前先管理列表、详情、表单三类页面配置。页面编码和版本号共同构成运行中的可追踪版本。"
