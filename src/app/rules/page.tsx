@@ -50,7 +50,7 @@ function buildRuleHref(ruleId: string, versionId?: string) {
     query.set("versionId", versionId);
   }
 
-  return `/rules?${query.toString()}`;
+  return `/rules?${query.toString()}#designer`;
 }
 
 function getExampleRuleNarrative(ruleCode: string) {
@@ -870,96 +870,98 @@ export default async function RulesPage({
             )}
           </SectionCard>
 
-          <SectionCard
-            eyebrow="规则设计器"
-            title={
-              overview.selectedVersion
-                ? `当前编辑版本 v${overview.selectedVersion.version}`
-                : "规则设计器"
-            }
-            description="画布中维护的是 RuleVersion.graph。已发布版本保存时会自动另存为新草稿，避免直接改线上图结构。"
-          >
-            {overview.selectedVersion ? (
-              <>
-                <div className="two-col-grid">
-                  <div className="version-card">
-                    <div className="table-cell-stack">
-                      <strong>当前版本信息</strong>
-                      <span
-                        className={
-                          overview.selectedVersion.isActive
-                            ? "status-pill status-pill-green"
-                            : "status-pill status-pill-amber"
-                        }
-                      >
-                        {overview.selectedVersion.isActive ? "线上版本" : "草稿 / 历史"}
-                      </span>
-                      <span className="muted">
-                        {overview.selectedVersion.nodeCount} 节点 · {overview.selectedVersion.edgeCount} 连线
-                      </span>
-                      <span className="muted">{overview.selectedVersion.pathPreview}</span>
-                      <span className="muted">
-                        {overview.selectedVersion.publishedAt !== "-"
-                          ? `${overview.selectedVersion.publishMode} · ${overview.selectedVersion.publishedAt} · ${overview.selectedVersion.publishedBy}`
-                          : "当前版本尚未激活"}
-                      </span>
+          <div id="designer">
+            <SectionCard
+              eyebrow="规则设计器"
+              title={
+                overview.selectedVersion
+                  ? `当前编辑版本 v${overview.selectedVersion.version}`
+                  : "规则设计器"
+              }
+              description="画布中维护的是 RuleVersion.graph。已发布版本保存时会自动另存为新草稿，避免直接改线上图结构。"
+            >
+              {overview.selectedVersion ? (
+                <>
+                  <div className="two-col-grid">
+                    <div className="version-card">
+                      <div className="table-cell-stack">
+                        <strong>当前版本信息</strong>
+                        <span
+                          className={
+                            overview.selectedVersion.isActive
+                              ? "status-pill status-pill-green"
+                              : "status-pill status-pill-amber"
+                          }
+                        >
+                          {overview.selectedVersion.isActive ? "线上版本" : "草稿 / 历史"}
+                        </span>
+                        <span className="muted">
+                          {overview.selectedVersion.nodeCount} 节点 · {overview.selectedVersion.edgeCount} 连线
+                        </span>
+                        <span className="muted">{overview.selectedVersion.pathPreview}</span>
+                        <span className="muted">
+                          {overview.selectedVersion.publishedAt !== "-"
+                            ? `${overview.selectedVersion.publishMode} · ${overview.selectedVersion.publishedAt} · ${overview.selectedVersion.publishedBy}`
+                            : "当前版本尚未激活"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="version-card">
+                      <div className="table-cell-stack">
+                        <strong>设计器约束</strong>
+                        <span className="muted">开始节点定义触发场景，动作和结果节点决定试运行输出。</span>
+                        <span className="muted">分支节点按配置顺序匹配 `branches`，`target` 必须是已连接的下游节点 ID。</span>
+                        <span className="muted">建议先克隆线上版本，再在新草稿里调整节点和连线。</span>
+                        <span className="muted">保存后会重新写入数据库，并可立即试运行。</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="version-card">
-                    <div className="table-cell-stack">
-                      <strong>设计器约束</strong>
-                      <span className="muted">开始节点定义触发场景，动作和结果节点决定试运行输出。</span>
-                      <span className="muted">分支节点按配置顺序匹配 `branches`，`target` 必须是已连接的下游节点 ID。</span>
-                      <span className="muted">建议先克隆线上版本，再在新草稿里调整节点和连线。</span>
-                      <span className="muted">保存后会重新写入数据库，并可立即试运行。</span>
-                    </div>
-                  </div>
+                  <form className="action-stack" action="/api/rules/versions" method="post">
+                    <input type="hidden" name="action" value="save-draft" />
+                    <input type="hidden" name="versionId" value={overview.selectedVersion.id} />
+                    <RuleDesigner
+                      key={overview.selectedVersion.id}
+                      inputName="graphText"
+                      initialGraphText={overview.selectedVersion.graphText}
+                      scene={overview.selectedRule.scene}
+                      readOnly={!canManage}
+                    />
+
+                    {canManage ? (
+                      <div className="inline-form">
+                        <input
+                          className="text-input input-compact"
+                          name="targetVersion"
+                          type="number"
+                          min={overview.selectedVersion.version + 1}
+                          placeholder="另存版本号，可留空"
+                        />
+                        <input
+                          className="text-input"
+                          name="note"
+                          placeholder={
+                            overview.selectedVersion.isActive
+                              ? "保存备注，可选；线上版本会自动另存为新草稿"
+                              : "保存备注，可选"
+                          }
+                        />
+                        <button type="submit" className="button-primary">
+                          保存设计器变更
+                        </button>
+                      </div>
+                    ) : null}
+                  </form>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <strong>当前没有可编辑的规则版本。</strong>
+                  <span className="muted">请先在上方选择一条规则和版本。</span>
                 </div>
-
-                <form className="action-stack" action="/api/rules/versions" method="post">
-                  <input type="hidden" name="action" value="save-draft" />
-                  <input type="hidden" name="versionId" value={overview.selectedVersion.id} />
-                  <RuleDesigner
-                    key={overview.selectedVersion.id}
-                    inputName="graphText"
-                    initialGraphText={overview.selectedVersion.graphText}
-                    scene={overview.selectedRule.scene}
-                    readOnly={!canManage}
-                  />
-
-                  {canManage ? (
-                    <div className="inline-form">
-                      <input
-                        className="text-input input-compact"
-                        name="targetVersion"
-                        type="number"
-                        min={overview.selectedVersion.version + 1}
-                        placeholder="另存版本号，可留空"
-                      />
-                      <input
-                        className="text-input"
-                        name="note"
-                        placeholder={
-                          overview.selectedVersion.isActive
-                            ? "保存备注，可选；线上版本会自动另存为新草稿"
-                            : "保存备注，可选"
-                        }
-                      />
-                      <button type="submit" className="button-primary">
-                        保存设计器变更
-                      </button>
-                    </div>
-                  ) : null}
-                </form>
-              </>
-            ) : (
-              <div className="empty-state">
-                <strong>当前没有可编辑的规则版本。</strong>
-                <span className="muted">请先在上方选择一条规则和版本。</span>
-              </div>
-            )}
-          </SectionCard>
+              )}
+            </SectionCard>
+          </div>
 
           <SectionCard
             eyebrow="试运行"
